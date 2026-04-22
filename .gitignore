@@ -1,0 +1,74 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Build
+.next/
+out/
+build/
+dist/
+
+# Environment
+.env
+.env.local
+.env.preprod
+.env.prod
+.env*.local
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Runtime data (bind mounts for Docker)
+data/app/
+data/chroma/
+data/redis/
+data/threads/
+data/postgres/
+data/qdrant/
+data/transformers_cache/
+data/global-docs/*
+
+# Keep data directory structure
+!data/.gitkeep
+!data/app/.gitkeep
+!data/chroma/.gitkeep
+!data/redis/.gitkeep
+!data/threads/.gitkeep
+!data/global-docs/.gitkeep
+!data/postgres/.gitkeep
+!data/qdrant/.gitkeep
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Testing
+coverage/
+.nyc_output/
+
+# Misc
+*.log
+*.pid
+*.seed
+
+# SQLite database files
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.db.backup-*
+
+# SQLite export CSVs (migration data)
+sqlite_export/

@@ -1,0 +1,251 @@
+# =============================================================================
+# Policy Bot - Docker Compose Configuration
+# =============================================================================
+#
+# SETUP: Volume permissions are handled automatically by the entrypoint.
+#   For non-Docker development, run ./setup.sh first.
+#
+# PROFILES: Use profiles to select which services to run:
+#
+#   Vector Store:
+#     --profile qdrant      → Qdrant vector store
+#
+#   Database:
+#     --profile postgres    → PostgreSQL
+#
+#   Local LLM:
+#     --profile ollama      → Ollama (set OLLAMA_API_BASE=http://ollama:11434)
+#
+# EXAMPLES:
+#   PostgreSQL + Qdrant:   docker compose --profile postgres --profile qdrant up -d
+#   PostgreSQL + Qdrant + Ollama: docker compose --profile postgres --profile qdrant --profile ollama up -d
+#
+# =============================================================================
+
+services:
+  traefik:
+    image: traefik:v3.6.1
+    container_name: policy-bot-traefik
+    command:
+      - "--api.insecure=false"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      # Increase timeouts for SSE/long-running autonomous mode (30 minutes)
+      - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=1800s"
+      - "--entrypoints.websecure.transport.respondingTimeouts.writeTimeout=1800s"
+      - "--entrypoints.websecure.transport.respondingTimeouts.idleTimeout=1800s"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+    networks:
+      - policy-bot-network
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: policy-bot-app
+    environment:
+      - NODE_ENV=production
+      # Vector Store Configuration
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      # Database Configuration
+      - DATABASE_PROVIDER=${DATABASE_PROVIDER:-sqlite}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-policybot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-policybot}
+      # Other Services
+      - REDIS_URL=redis://redis:6379
+      - DATA_DIR=/app/data
+      - CONFIG_DIR=/app/config
+      # Point to LiteLLM proxy for multi-provider LLM support
+      - OPENAI_BASE_URL=http://litellm:4000/v1
+      # Fix transformers cache permission (reranker model caching)
+      - TRANSFORMERS_CACHE=/tmp/transformers_cache
+      - XDG_CACHE_HOME=/tmp/cache
+      # Hugging Face token for downloading gated models (local embeddings)
+      - HF_TOKEN=${HF_TOKEN}
+    env_file:
+      - .env
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.app.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.app.entrypoints=websecure"
+      - "traefik.http.routers.app.tls.certresolver=letsencrypt"
+      - "traefik.http.services.app.loadbalancer.server.port=3000"
+      # Increase timeouts for SSE/long-running autonomous mode connections
+      - "traefik.http.middlewares.sse-timeout.headers.customRequestHeaders.Connection=keep-alive"
+      - "traefik.http.routers.app.middlewares=sse-timeout"
+      # SSE streaming: flush immediately for real-time updates
+      - "traefik.http.services.app.loadbalancer.responseForwarding.flushInterval=100ms"
+    volumes:
+      - ./data/app:/app/data
+      - ./config:/app/config:ro
+      - ./data/transformers_cache:/tmp/transformers_cache  # Persist BGE reranker models (~670MB)
+    # PostgreSQL: waits for healthy status when the postgres profile is active.
+    depends_on:
+      redis:
+        condition: service_healthy
+      litellm:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+        required: false  # Only enforced when postgres profile is active
+    networks:
+      - policy-bot-network
+    restart: unless-stopped
+
+  # Qdrant Vector Store
+  # Start with: docker compose --profile qdrant up -d
+  qdrant:
+    image: qdrant/qdrant:v1.17.0
+    container_name: policy-bot-qdrant
+    profiles:
+      - qdrant
+    restart: unless-stopped
+    volumes:
+      - ./data/qdrant:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__SERVICE__HTTP_PORT=6333
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:6333/readyz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - policy-bot-network
+
+  # PostgreSQL Database (optional - use when DATABASE_PROVIDER=postgres)
+  # Start with: docker compose --profile postgres up -d
+  postgres:
+    image: postgres:16-alpine
+    container_name: policy-bot-postgres
+    restart: unless-stopped
+    profiles:
+      - postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-policybot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-policybot}
+    volumes:
+      - policybot-pgdata:/var/lib/postgresql/data
+      # Auto-run on first init (only executes once when DB is created)
+      - ./src/lib/db/schema/00-create-litellm-db.sql:/docker-entrypoint-initdb.d/00-create-litellm-db.sql:ro
+      - ./src/lib/db/schema/postgres.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-policybot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - policy-bot-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: policy-bot-redis
+    volumes:
+      - ./data/redis:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - policy-bot-network
+    restart: unless-stopped
+
+  # Ollama Local LLM Server (optional - use for local model inference)
+  # Start with: docker compose --profile ollama up -d
+  ollama:
+    image: ollama/ollama:0.18.2
+    container_name: policy-bot-ollama
+    profiles:
+      - ollama
+    entrypoint: ["/bin/bash", "/ollama-entrypoint.sh"]
+    volumes:
+      - ollama-models:/root/.ollama
+      - ./scripts/ollama-entrypoint.sh:/ollama-entrypoint.sh:ro
+    environment:
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-5m}
+      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-1}
+      - OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH:-8192}
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    networks:
+      - policy-bot-network
+    restart: unless-stopped
+
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.82.3-stable.patch.2
+    container_name: policy-bot-litellm
+    volumes:
+      - ./litellm-proxy/litellm_config.yaml:/app/config.yaml:ro
+    # NOTE: Do NOT use env_file here. Loading .env passes DATABASE_URL to Prisma,
+    # which crashes LiteLLM when the URL format doesn't match expectations.
+    # Pass only needed vars explicitly via ${VAR} substitution from .env.
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - FIREWORKS_AI_API_KEY=${FIREWORKS_AI_API_KEY}
+      - OLLAMA_API_BASE=${OLLAMA_API_BASE:-}
+      # LiteLLM needs a DB for /model/new API (auto-sync models from app).
+      # Uses a separate "litellm" database in the same Postgres instance.
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-policybot}:${POSTGRES_PASSWORD}@postgres:5432/litellm
+      - STORE_MODEL_IN_DB=True
+      - DISABLE_SPEND_LOGS=True
+    command: --config /app/config.yaml --port 4000
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false  # Only enforced when postgres profile is active
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    networks:
+      - policy-bot-network
+    restart: unless-stopped
+
+networks:
+  policy-bot-network:
+    name: policy-bot-network
+
+volumes:
+  letsencrypt:
+    name: policy-bot-letsencrypt
+  policybot-pgdata:
+    name: policybot-pgdata
+  ollama-models:
+    name: policy-bot-ollama-models

@@ -1,0 +1,5248 @@
+openapi: 3.0.0
+info:
+  title: Policy Bot API
+  version: 1.0.0
+  description: |
+    RAG-based policy assistant API for Caribbean government staff.
+
+    ## Authentication
+    All endpoints except `/branding` require authentication via NextAuth session cookies.
+
+    ## User Roles
+    - **admin**: Full system access
+    - **superuser**: Manage documents/users in assigned categories
+    - **user**: Query documents in subscribed categories
+  contact:
+    name: Policy Bot Support
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://policybot.abhirup.app/api
+    description: Production
+  - url: http://localhost:3000/api
+    description: Local Development
+
+tags:
+  - name: Chat
+    description: Send messages and receive RAG-powered responses (standard and streaming)
+  - name: Threads
+    description: Manage conversation threads
+  - name: User
+    description: User-specific endpoints
+  - name: Admin - Categories
+    description: Category management (admin only)
+  - name: Admin - Documents
+    description: Document management (admin only)
+  - name: Admin - Users
+    description: User management (admin only)
+  - name: Admin - Settings
+    description: System configuration (admin only)
+  - name: Admin - System
+    description: System operations (admin only)
+  - name: Super User - Documents
+    description: Document management for assigned categories
+  - name: Super User - Users
+    description: User subscription management for assigned categories
+  - name: Super User - Categories
+    description: Category management for superusers (view managed/subscribed, create within quota)
+  - name: Admin - Tools
+    description: Tool configuration management (admin only)
+  - name: Admin - Skills
+    description: Skills management (admin only)
+  - name: Category Prompts
+    description: Category-specific prompt configuration
+  - name: Super User - Tools
+    description: Category-level tool overrides (superuser only)
+  - name: Admin - Data Sources
+    description: Data source management (API and CSV)
+  - name: Admin - Function APIs
+    description: Function API configuration with OpenAI-format schemas
+  - name: Branding
+    description: Public branding endpoints
+  - name: Admin - Agent Bots
+    description: Agent bot management (admin/superuser)
+  - name: Agent Bots - Public
+    description: Agent bot invocation API (API key auth)
+  - name: Admin - LLM
+    description: LLM provider and model management (admin only)
+  - name: Autonomous
+    description: Autonomous plan control
+
+components:
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: next-auth.session-token
+      description: NextAuth session cookie
+
+  schemas:
+    Thread:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        title:
+          type: string
+          example: "HR Policy Questions"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        uploadCount:
+          type: integer
+          example: 1
+        categoryIds:
+          type: array
+          items:
+            type: integer
+          example: [1, 3]
+      required:
+        - id
+        - title
+        - createdAt
+        - updatedAt
+        - uploadCount
+        - categoryIds
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "msg_abc123"
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/Source'
+        attachments:
+          type: array
+          items:
+            type: string
+        timestamp:
+          type: string
+          format: date-time
+      required:
+        - id
+        - role
+        - content
+        - timestamp
+
+    Source:
+      type: object
+      properties:
+        documentName:
+          type: string
+          example: "HR_Handbook_2024.pdf"
+        pageNumber:
+          type: integer
+          example: 12
+        chunkText:
+          type: string
+          example: "Annual leave entitlement is 20 working days..."
+        score:
+          type: number
+          format: float
+          example: 0.89
+        isWeb:
+          type: boolean
+          description: True if source is from Tavily web search
+
+    Document:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        filename:
+          type: string
+          example: "HR_Handbook_2024.pdf"
+        size:
+          type: integer
+          description: File size in bytes
+          example: 1048576
+        chunkCount:
+          type: integer
+          example: 45
+        uploadedAt:
+          type: string
+          format: date-time
+        uploadedBy:
+          type: string
+          format: email
+        status:
+          type: string
+          enum: [processing, ready, error]
+        errorMessage:
+          type: string
+        isGlobal:
+          type: boolean
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategoryAssignment'
+      required:
+        - id
+        - filename
+        - size
+        - uploadedAt
+        - uploadedBy
+        - status
+        - isGlobal
+
+    CategoryAssignment:
+      type: object
+      properties:
+        categoryId:
+          type: integer
+        categoryName:
+          type: string
+
+    Category:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: "Human Resources"
+        slug:
+          type: string
+          example: "human-resources"
+        description:
+          type: string
+          nullable: true
+        createdBy:
+          type: string
+          format: email
+        createdAt:
+          type: string
+          format: date-time
+        documentCount:
+          type: integer
+        superUserCount:
+          type: integer
+        subscriberCount:
+          type: integer
+      required:
+        - id
+        - name
+        - slug
+        - createdAt
+
+    User:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        role:
+          type: string
+          enum: [admin, superuser, user]
+        addedAt:
+          type: string
+          format: date-time
+        addedBy:
+          type: string
+          format: email
+        subscriptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Subscription'
+        assignedCategories:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategoryRef'
+      required:
+        - email
+        - role
+        - addedAt
+        - addedBy
+
+    Subscription:
+      type: object
+      properties:
+        categoryId:
+          type: integer
+        categoryName:
+          type: string
+        isActive:
+          type: boolean
+
+    CategoryRef:
+      type: object
+      properties:
+        categoryId:
+          type: integer
+        categoryName:
+          type: string
+
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+        code:
+          type: string
+          enum:
+            - AUTH_REQUIRED
+            - ADMIN_REQUIRED
+            - SUPERUSER_REQUIRED
+            - NOT_FOUND
+            - VALIDATION_ERROR
+            - FILE_TOO_LARGE
+            - UPLOAD_LIMIT
+            - INVALID_FILE_TYPE
+            - DUPLICATE
+            - SERVICE_ERROR
+        details:
+          type: string
+          description: Additional context
+      required:
+        - error
+
+    ProviderStatus:
+      type: object
+      properties:
+        provider:
+          type: string
+        available:
+          type: boolean
+        configured:
+          type: boolean
+        error:
+          type: string
+
+    ServiceStatus:
+      type: object
+      properties:
+        name:
+          type: string
+        model:
+          type: string
+        provider:
+          type: string
+        available:
+          type: boolean
+        configured:
+          type: boolean
+        error:
+          type: string
+
+    Tool:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "web_search"
+        displayName:
+          type: string
+          example: "Web Search"
+        description:
+          type: string
+        category:
+          type: string
+          enum: [autonomous, processor]
+        enabled:
+          type: boolean
+        config:
+          type: object
+        hasDefinition:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
+        updatedBy:
+          type: string
+      required:
+        - name
+        - displayName
+        - category
+        - enabled
+
+    Skill:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          example: "Legal Compliance"
+        description:
+          type: string
+          nullable: true
+        promptContent:
+          type: string
+        triggerType:
+          type: string
+          enum: [always, category, keyword]
+        triggerValue:
+          type: string
+          nullable: true
+        categoryRestricted:
+          type: boolean
+        isIndex:
+          type: boolean
+        priority:
+          type: integer
+        isActive:
+          type: boolean
+        isCore:
+          type: boolean
+        tokenEstimate:
+          type: integer
+        categories:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+      required:
+        - id
+        - name
+        - triggerType
+        - isActive
+        - isCore
+
+    StarterPrompt:
+      type: object
+      properties:
+        label:
+          type: string
+          maxLength: 30
+          example: "Leave Policy"
+        prompt:
+          type: string
+          maxLength: 500
+          example: "What is the annual leave policy?"
+      required:
+        - label
+        - prompt
+
+    CategoryPrompt:
+      type: object
+      properties:
+        categoryId:
+          type: integer
+        promptAddendum:
+          type: string
+        starterPrompts:
+          type: array
+          items:
+            $ref: '#/components/schemas/StarterPrompt'
+        maxCharactersAvailable:
+          type: integer
+        updatedAt:
+          type: string
+          format: date-time
+        updatedBy:
+          type: string
+
+    AgentBot:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "HR Assistant"
+        slug:
+          type: string
+          example: "hr-assistant"
+        description:
+          type: string
+        is_active:
+          type: boolean
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - slug
+        - is_active
+        - created_by
+        - created_at
+
+    AgentBotVersion:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        agent_bot_id:
+          type: string
+          format: uuid
+        version_label:
+          type: string
+          example: "v1.0"
+        is_default:
+          type: boolean
+        is_active:
+          type: boolean
+        input_schema:
+          $ref: '#/components/schemas/InputSchema'
+        output_config:
+          $ref: '#/components/schemas/OutputConfig'
+        system_prompt:
+          type: string
+        llm_model:
+          type: string
+        temperature:
+          type: number
+        max_tokens:
+          type: integer
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    InputSchema:
+      type: object
+      properties:
+        parameters:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              type:
+                type: string
+                enum: [string, number, boolean, array]
+              description:
+                type: string
+              required:
+                type: boolean
+              default:
+                type: string
+
+    OutputConfig:
+      type: object
+      properties:
+        enabledTypes:
+          type: array
+          items:
+            type: string
+            enum: [text, json, pdf, pptx, xlsx, mp3]
+        defaultType:
+          type: string
+          enum: [text, json, pdf, pptx, xlsx, mp3]
+      required:
+        - enabledTypes
+        - defaultType
+
+    AgentBotApiKey:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        agent_bot_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        key_prefix:
+          type: string
+          example: "pb_abc..."
+        permissions:
+          type: array
+          items:
+            type: string
+        rate_limit_rpm:
+          type: integer
+          example: 60
+        rate_limit_rpd:
+          type: integer
+          example: 1000
+        expires_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: string
+          format: date-time
+        is_active:
+          type: boolean
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+
+    InvokeRequest:
+      type: object
+      properties:
+        input:
+          type: object
+          additionalProperties: true
+        version:
+          type: string
+          description: "Version ID or 'latest'"
+        outputType:
+          type: string
+          enum: [text, json, pdf, pptx, xlsx, mp3]
+        async:
+          type: boolean
+          description: "If true, returns immediately with jobId"
+        webhookUrl:
+          type: string
+          format: uri
+        webhookSecret:
+          type: string
+      required:
+        - input
+
+    InvokeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        jobId:
+          type: string
+        outputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvokeOutput'
+        tokenUsage:
+          $ref: '#/components/schemas/TokenUsage'
+        processingTimeMs:
+          type: integer
+
+    InvokeOutput:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [text, json, pdf, pptx, xlsx, mp3]
+        content:
+          type: string
+        downloadUrl:
+          type: string
+        filename:
+          type: string
+        fileSize:
+          type: integer
+        mimeType:
+          type: string
+
+    TokenUsage:
+      type: object
+      properties:
+        promptTokens:
+          type: integer
+        completionTokens:
+          type: integer
+        totalTokens:
+          type: integer
+
+    JobStatus:
+      type: object
+      properties:
+        jobId:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        outputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvokeOutput'
+        tokenUsage:
+          $ref: '#/components/schemas/TokenUsage'
+        processingTimeMs:
+          type: integer
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+            code:
+              type: string
+
+    LLMProvider:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "openai"
+        name:
+          type: string
+          example: "OpenAI"
+        apiKey:
+          type: string
+          description: "Masked API key"
+        apiKeyConfigured:
+          type: boolean
+        apiBase:
+          type: string
+        enabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    EnabledModel:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "gpt-4o"
+        providerId:
+          type: string
+          example: "openai"
+        displayName:
+          type: string
+          example: "GPT-4o"
+        isDefault:
+          type: boolean
+        isActive:
+          type: boolean
+        toolCapable:
+          type: boolean
+        visionCapable:
+          type: boolean
+        maxInputTokens:
+          type: integer
+        costPer1kInput:
+          type: number
+        costPer1kOutput:
+          type: number
+        sortOrder:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    AutonomousPlanResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        status:
+          type: string
+          enum: [active, paused, stopped]
+        completed_tasks:
+          type: integer
+        remaining_tasks:
+          type: integer
+        skipped_tasks:
+          type: integer
+        total_tasks:
+          type: integer
+        message:
+          type: string
+
+  securitySchemes:
+    apiKeyAuth:
+      type: http
+      scheme: bearer
+      description: API key for agent bot invocation
+
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            error: "Unauthorized"
+            code: "AUTH_REQUIRED"
+
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            error: "Admin access required"
+            code: "ADMIN_REQUIRED"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            error: "Resource not found"
+            code: "NOT_FOUND"
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            error: "Internal server error"
+            code: "SERVICE_ERROR"
+
+security:
+  - sessionAuth: []
+
+paths:
+  /chat:
+    post:
+      tags:
+        - Chat
+      summary: Send chat message
+      description: Send a message and receive a RAG-powered response with document sources
+      operationId: sendMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+                  description: User's question
+                  example: "What is the annual leave policy?"
+                threadId:
+                  type: string
+                  format: uuid
+                  description: Thread ID
+                  example: "550e8400-e29b-41d4-a716-446655440000"
+              required:
+                - message
+                - threadId
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    $ref: '#/components/schemas/Message'
+                  threadId:
+                    type: string
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /threads:
+    get:
+      tags:
+        - Threads
+      summary: List threads
+      description: List all threads for the current user
+      operationId: listThreads
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+          description: Max threads to return
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: Pagination offset
+      responses:
+        '200':
+          description: List of threads
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  threads:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Thread'
+                  total:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Threads
+      summary: Create thread
+      description: Create a new conversation thread
+      operationId: createThread
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  example: "HR Policy Questions"
+                categoryIds:
+                  type: array
+                  items:
+                    type: integer
+                  example: [1, 2]
+      responses:
+        '201':
+          description: Thread created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Thread'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /threads/{threadId}:
+    parameters:
+      - name: threadId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      tags:
+        - Threads
+      summary: Get thread
+      description: Get a specific thread with all messages
+      operationId: getThread
+      responses:
+        '200':
+          description: Thread details
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Thread'
+                  - type: object
+                    properties:
+                      messages:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Message'
+                      uploads:
+                        type: array
+                        items:
+                          type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - Threads
+      summary: Update thread
+      description: Update thread title or categories
+      operationId: updateThread
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  maxLength: 100
+                categoryIds:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        '200':
+          description: Thread updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  title:
+                    type: string
+                  categoryIds:
+                    type: array
+                    items:
+                      type: integer
+                  updatedAt:
+                    type: string
+                    format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Threads
+      summary: Delete thread
+      description: Delete a thread and all associated data
+      operationId: deleteThread
+      responses:
+        '200':
+          description: Thread deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  deleted:
+                    type: object
+                    properties:
+                      threadId:
+                        type: string
+                      messageCount:
+                        type: integer
+                      uploadCount:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /threads/{threadId}/upload:
+    parameters:
+      - name: threadId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    post:
+      tags:
+        - Threads
+      summary: Upload file to thread
+      description: Upload a PDF to a thread for compliance checking
+      operationId: uploadToThread
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: PDF file (max 5MB)
+              required:
+                - file
+      responses:
+        '200':
+          description: File uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  filename:
+                    type: string
+                  size:
+                    type: integer
+                  uploadCount:
+                    type: integer
+        '400':
+          description: Validation error or upload limit reached
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: File too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /user/categories:
+    get:
+      tags:
+        - User
+      summary: Get accessible categories
+      description: Get categories available to the current user based on their role
+      operationId: getUserCategories
+      responses:
+        '200':
+          description: List of categories
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  categories:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        name:
+                          type: string
+                        slug:
+                          type: string
+                        description:
+                          type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /user/subscriptions:
+    get:
+      tags:
+        - User
+      summary: Get subscriptions
+      description: Get the current user's category subscriptions
+      operationId: getUserSubscriptions
+      responses:
+        '200':
+          description: List of subscriptions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscriptions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        categoryId:
+                          type: integer
+                        categoryName:
+                          type: string
+                        categorySlug:
+                          type: string
+                        isActive:
+                          type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /branding:
+    get:
+      tags:
+        - Branding
+      summary: Get branding settings
+      description: Get branding settings (public endpoint, no authentication required)
+      operationId: getBranding
+      security: []
+      responses:
+        '200':
+          description: Branding settings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  botName:
+                    type: string
+                    example: "Policy Bot"
+                  botIcon:
+                    type: string
+                    example: "policy"
+                  availableIcons:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key:
+                          type: string
+                        label:
+                          type: string
+                        lucideIcon:
+                          type: string
+
+  /admin/categories:
+    get:
+      tags:
+        - Admin - Categories
+      summary: List all categories
+      description: List all categories with statistics (admin only)
+      operationId: listCategories
+      responses:
+        '200':
+          description: List of categories
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  categories:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags:
+        - Admin - Categories
+      summary: Create category
+      description: Create a new category (admin only)
+      operationId: createCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: "Human Resources"
+                description:
+                  type: string
+                  example: "HR policies and procedures"
+              required:
+                - name
+      responses:
+        '201':
+          description: Category created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  category:
+                    $ref: '#/components/schemas/Category'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Category already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /admin/categories/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+
+    get:
+      tags:
+        - Admin - Categories
+      summary: Get category details
+      description: Get category details with users and documents (admin only)
+      operationId: getCategory
+      responses:
+        '200':
+          description: Category details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  category:
+                    $ref: '#/components/schemas/Category'
+                  superUsers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        userId:
+                          type: integer
+                        email:
+                          type: string
+                        name:
+                          type: string
+                  subscribers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        userId:
+                          type: integer
+                        email:
+                          type: string
+                        name:
+                          type: string
+                        isActive:
+                          type: boolean
+                  documentCount:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - Admin - Categories
+      summary: Update category
+      description: Update a category (admin only)
+      operationId: updateCategory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+      responses:
+        '200':
+          description: Category updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  category:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      name:
+                        type: string
+                      slug:
+                        type: string
+                      description:
+                        type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Admin - Categories
+      summary: Delete category
+      description: Delete a category (admin only). Documents become unassigned.
+      operationId: deleteCategory
+      responses:
+        '200':
+          description: Category deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  deleted:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      name:
+                        type: string
+                      documentsUnassigned:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/documents:
+    get:
+      tags:
+        - Admin - Documents
+      summary: List all documents
+      description: List all global policy documents (admin only)
+      operationId: listDocuments
+      responses:
+        '200':
+          description: List of documents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  documents:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Document'
+                  totalChunks:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags:
+        - Admin - Documents
+      summary: Upload document
+      description: Upload a new policy document with category assignment (admin only)
+      operationId: uploadDocument
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: PDF file (max 50MB)
+                categoryIds:
+                  type: string
+                  description: JSON array of category IDs
+                  example: "[1, 2]"
+                isGlobal:
+                  type: string
+                  description: '"true" to index in all categories'
+                  example: "false"
+              required:
+                - file
+      responses:
+        '202':
+          description: Document accepted for processing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  filename:
+                    type: string
+                  size:
+                    type: integer
+                  status:
+                    type: string
+                    enum: [processing]
+                  isGlobal:
+                    type: boolean
+                  categoryIds:
+                    type: array
+                    items:
+                      type: integer
+                  message:
+                    type: string
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Document already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: File too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /admin/documents/{docId}:
+    parameters:
+      - name: docId
+        in: path
+        required: true
+        schema:
+          type: integer
+
+    get:
+      tags:
+        - Admin - Documents
+      summary: Get document details
+      description: Get details of a specific document (admin only)
+      operationId: getDocument
+      responses:
+        '200':
+          description: Document details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - Admin - Documents
+      summary: Update document
+      description: Update document category assignments (admin only)
+      operationId: updateDocument
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                categoryIds:
+                  type: array
+                  items:
+                    type: integer
+                isGlobal:
+                  type: boolean
+      responses:
+        '200':
+          description: Document updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  filename:
+                    type: string
+                  isGlobal:
+                    type: boolean
+                  categories:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CategoryAssignment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Admin - Documents
+      summary: Delete document
+      description: Delete a policy document from the global store (admin only)
+      operationId: deleteDocument
+      responses:
+        '200':
+          description: Document deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  deleted:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      filename:
+                        type: string
+                      chunksRemoved:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/users:
+    get:
+      tags:
+        - Admin - Users
+      summary: List all users
+      description: List all users with their subscriptions/assignments (admin only)
+      operationId: listUsers
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags:
+        - Admin - Users
+      summary: Add user
+      description: Add a new user with optional subscriptions/assignments (admin only)
+      operationId: addUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                role:
+                  type: string
+                  enum: [admin, superuser, user]
+                name:
+                  type: string
+                subscriptions:
+                  type: array
+                  items:
+                    type: integer
+                  description: Category IDs for role="user"
+                assignedCategories:
+                  type: array
+                  items:
+                    type: integer
+                  description: Category IDs for role="superuser"
+              required:
+                - email
+                - role
+      responses:
+        '200':
+          description: User added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    type: object
+                    properties:
+                      email:
+                        type: string
+                      name:
+                        type: string
+                      role:
+                        type: string
+                      addedAt:
+                        type: string
+                      addedBy:
+                        type: string
+                  message:
+                    type: string
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    patch:
+      tags:
+        - Admin - Users
+      summary: Update user role
+      description: Update a user's role (admin only)
+      operationId: updateUserRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                role:
+                  type: string
+                  enum: [admin, superuser, user]
+              required:
+                - email
+                - role
+      responses:
+        '200':
+          description: Role updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Admin - Users
+      summary: Remove user
+      description: Remove a user from the allowlist (admin only)
+      operationId: removeUser
+      parameters:
+        - name: email
+          in: query
+          required: true
+          schema:
+            type: string
+            format: email
+      responses:
+        '200':
+          description: User removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Cannot remove yourself
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/users/{userId}/subscriptions:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: integer
+
+    get:
+      tags:
+        - Admin - Users
+      summary: Get user subscriptions
+      description: Get a user's category subscriptions (admin only)
+      operationId: getUserSubscriptions
+      responses:
+        '200':
+          description: User subscriptions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      email:
+                        type: string
+                      name:
+                        type: string
+                      role:
+                        type: string
+                  subscriptions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        categoryId:
+                          type: integer
+                        categoryName:
+                          type: string
+                        categorySlug:
+                          type: string
+                        isActive:
+                          type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      tags:
+        - Admin - Users
+      summary: Add subscription
+      description: Add a subscription for a user (admin only)
+      operationId: addUserSubscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                categoryId:
+                  type: integer
+              required:
+                - categoryId
+      responses:
+        '201':
+          description: Subscription added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  subscription:
+                    type: object
+                    properties:
+                      userId:
+                        type: integer
+                      categoryId:
+                        type: integer
+                      categoryName:
+                        type: string
+                      isActive:
+                        type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: User already subscribed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+    put:
+      tags:
+        - Admin - Users
+      summary: Toggle subscription
+      description: Toggle subscription active status (admin only)
+      operationId: toggleUserSubscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                categoryId:
+                  type: integer
+                isActive:
+                  type: boolean
+              required:
+                - categoryId
+                - isActive
+      responses:
+        '200':
+          description: Subscription toggled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  subscription:
+                    type: object
+                    properties:
+                      userId:
+                        type: integer
+                      categoryId:
+                        type: integer
+                      isActive:
+                        type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Admin - Users
+      summary: Remove subscription
+      description: Remove a subscription from a user (admin only)
+      operationId: removeUserSubscription
+      parameters:
+        - name: categoryId
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Subscription removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  removed:
+                    type: object
+                    properties:
+                      userId:
+                        type: integer
+                      categoryId:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/documents/text:
+    post:
+      tags:
+        - Admin - Documents
+      summary: Upload text content
+      description: Upload text content directly as a document (bypasses OCR)
+      operationId: uploadTextDocument
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 255
+                  description: Document name
+                content:
+                  type: string
+                  minLength: 10
+                  description: Text content (max 10MB)
+                categoryIds:
+                  type: array
+                  items:
+                    type: integer
+                  description: Category IDs to assign
+                isGlobal:
+                  type: boolean
+                  description: Index in all categories
+              required:
+                - name
+                - content
+      responses:
+        '202':
+          description: Document accepted for processing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  filename:
+                    type: string
+                  size:
+                    type: integer
+                  status:
+                    type: string
+                    enum: [processing]
+                  message:
+                    type: string
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Document already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Content too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /admin/documents/{docId}/reindex:
+    parameters:
+      - name: docId
+        in: path
+        required: true
+        schema:
+          type: integer
+
+    post:
+      tags:
+        - Admin - Documents
+      summary: Reindex document
+      description: Reindex an existing document (re-extract and re-embed)
+      operationId: reindexDocument
+      responses:
+        '202':
+          description: Reindex started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  filename:
+                    type: string
+                  status:
+                    type: string
+                    enum: [processing]
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/settings:
+    get:
+      tags:
+        - Admin - Settings
+      summary: Get all settings
+      description: Get all configurable settings (admin only)
+      operationId: getSettings
+      responses:
+        '200':
+          description: All settings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rag:
+                    type: object
+                    properties:
+                      chunkSize:
+                        type: integer
+                      chunkOverlap:
+                        type: integer
+                      topK:
+                        type: integer
+                      cacheTTLSeconds:
+                        type: integer
+                  llm:
+                    type: object
+                    properties:
+                      model:
+                        type: string
+                      temperature:
+                        type: number
+                      maxTokens:
+                        type: integer
+                  acronyms:
+                    type: object
+                    properties:
+                      mappings:
+                        type: object
+                        additionalProperties:
+                          type: string
+                  tavily:
+                    type: object
+                    properties:
+                      enabled:
+                        type: boolean
+                      cacheTTLSeconds:
+                        type: integer
+                  branding:
+                    type: object
+                    properties:
+                      botName:
+                        type: string
+                      botIcon:
+                        type: string
+                  embedding:
+                    type: object
+                    properties:
+                      model:
+                        type: string
+                      dimensions:
+                        type: integer
+                  reranker:
+                    type: object
+                    properties:
+                      enabled:
+                        type: boolean
+                      providers:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            provider:
+                              type: string
+                              enum: [bge-large, cohere, bge-base, local]
+                            enabled:
+                              type: boolean
+                      cohereApiKey:
+                        type: string
+                      topKForReranking:
+                        type: integer
+                      minRerankerScore:
+                        type: number
+                  uploadLimits:
+                    type: object
+                    properties:
+                      maxFilesPerThread:
+                        type: integer
+                      maxFileSizeMB:
+                        type: integer
+                      allowedTypes:
+                        type: array
+                        items:
+                          type: string
+                  availableModels:
+                    type: array
+                    items:
+                      type: string
+                  modelPresets:
+                    type: array
+                    items:
+                      type: object
+                  brandingIcons:
+                    type: array
+                    items:
+                      type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    patch:
+      tags:
+        - Admin - Settings
+      summary: Update settings
+      description: Update settings by type (admin only)
+      operationId: updateSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - rag
+                    - llm
+                    - acronyms
+                    - tavily
+                    - uploadLimits
+                    - retention
+                    - preset
+                    - branding
+                    - embedding
+                    - reranker
+                    - restoreAllDefaults
+                settings:
+                  type: object
+                  description: Settings object (varies by type)
+              required:
+                - type
+      responses:
+        '200':
+          description: Settings updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  settings:
+                    type: object
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/system-prompt:
+    get:
+      tags:
+        - Admin - Settings
+      summary: Get system prompt
+      description: Get the current system prompt with metadata (admin only)
+      operationId: getSystemPrompt
+      responses:
+        '200':
+          description: System prompt
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  systemPrompt:
+                    type: string
+                  updatedAt:
+                    type: string
+                    format: date-time
+                  updatedBy:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    put:
+      tags:
+        - Admin - Settings
+      summary: Update system prompt
+      description: Update the system prompt (admin only)
+      operationId: updateSystemPrompt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemPrompt:
+                  type: string
+                  minLength: 10
+              required:
+                - systemPrompt
+      responses:
+        '200':
+          description: System prompt updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  systemPrompt:
+                    type: string
+                  updatedAt:
+                    type: string
+                    format: date-time
+                  updatedBy:
+                    type: string
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/refresh:
+    post:
+      tags:
+        - Admin - System
+      summary: Reindex all documents
+      description: Reindex all documents and clear cache (admin only)
+      operationId: refreshAll
+      responses:
+        '202':
+          description: Reindex started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  documentsQueued:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/stats:
+    get:
+      tags:
+        - Admin - System
+      summary: Get system statistics
+      description: Get system statistics for the admin dashboard (admin only)
+      operationId: getStats
+      responses:
+        '200':
+          description: System statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  database:
+                    type: object
+                    properties:
+                      users:
+                        type: integer
+                      categories:
+                        type: integer
+                      documents:
+                        type: integer
+                      threads:
+                        type: integer
+                      messages:
+                        type: integer
+                  vectorStore:
+                    type: object
+                    properties:
+                      collections:
+                        type: integer
+                      totalVectors:
+                        type: integer
+                  storage:
+                    type: object
+                    properties:
+                      totalBytes:
+                        type: integer
+                      documentsBytes:
+                        type: integer
+                      threadsBytes:
+                        type: integer
+                      percentUsed:
+                        type: number
+                  recentActivity:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                        description:
+                          type: string
+                        timestamp:
+                          type: string
+                          format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/providers:
+    get:
+      tags:
+        - Admin - System
+      summary: Check provider status
+      description: Check the status and availability of configured LLM providers (admin only)
+      operationId: getProviders
+      responses:
+        '200':
+          description: Provider status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  providers:
+                    type: object
+                    properties:
+                      openai:
+                        $ref: '#/components/schemas/ProviderStatus'
+                      mistral:
+                        $ref: '#/components/schemas/ProviderStatus'
+                      ollama:
+                        $ref: '#/components/schemas/ProviderStatus'
+                      azure:
+                        $ref: '#/components/schemas/ProviderStatus'
+                  services:
+                    type: object
+                    properties:
+                      embedding:
+                        $ref: '#/components/schemas/ServiceStatus'
+                      ocr:
+                        $ref: '#/components/schemas/ServiceStatus'
+                      audio:
+                        $ref: '#/components/schemas/ServiceStatus'
+                  usingProxy:
+                    type: boolean
+                  proxyUrl:
+                    type: string
+                    nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/reranker-status:
+    get:
+      tags:
+        - Admin - System
+      summary: Check reranker status
+      description: Check reranker availability (BGE cross-encoder, Cohere API, and local bi-encoder)
+      operationId: getRerankerStatus
+      responses:
+        '200':
+          description: Reranker status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cohere:
+                    type: object
+                    properties:
+                      available:
+                        type: boolean
+                      configured:
+                        type: boolean
+                      error:
+                        type: string
+                  local:
+                    type: object
+                    properties:
+                      available:
+                        type: boolean
+                      model:
+                        type: string
+                      error:
+                        type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /superuser/documents:
+    get:
+      tags:
+        - Super User - Documents
+      summary: List assigned documents
+      description: Get documents in super user's assigned categories
+      operationId: getSuperuserDocuments
+      responses:
+        '200':
+          description: Documents list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  assignedCategories:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        categoryId:
+                          type: integer
+                        categoryName:
+                          type: string
+                        categorySlug:
+                          type: string
+                  documents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        filename:
+                          type: string
+                        size:
+                          type: integer
+                        status:
+                          type: string
+                          enum: [processing, ready, error]
+                        uploadedBy:
+                          type: string
+                        uploadedAt:
+                          type: string
+                          format: date-time
+                        categories:
+                          type: array
+                          items:
+                            $ref: '#/components/schemas/CategoryAssignment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Super user access required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+    post:
+      tags:
+        - Super User - Documents
+      summary: Upload document
+      description: Upload a document to one of super user's assigned categories
+      operationId: uploadSuperuserDocument
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: PDF file (max 50MB)
+                categoryId:
+                  type: string
+                  description: Category ID (must be assigned to super user)
+              required:
+                - file
+                - categoryId
+      responses:
+        '202':
+          description: Document accepted for processing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  filename:
+                    type: string
+                  size:
+                    type: integer
+                  status:
+                    type: string
+                    enum: [processing]
+                  message:
+                    type: string
+                  category:
+                    type: object
+                    properties:
+                      categoryId:
+                        type: integer
+                      categoryName:
+                        type: string
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No access to this category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: File too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /superuser/documents/text:
+    post:
+      tags:
+        - Super User - Documents
+      summary: Upload text content
+      description: Upload text content directly to one of super user's assigned categories
+      operationId: uploadSuperuserTextDocument
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 255
+                  description: Document name
+                content:
+                  type: string
+                  minLength: 10
+                  description: Text content (max 10MB)
+                categoryId:
+                  type: integer
+                  description: Category ID (must be assigned to super user)
+              required:
+                - name
+                - content
+                - categoryId
+      responses:
+        '202':
+          description: Document accepted for processing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  filename:
+                    type: string
+                  size:
+                    type: integer
+                  status:
+                    type: string
+                    enum: [processing]
+                  message:
+                    type: string
+                  category:
+                    type: object
+                    properties:
+                      categoryId:
+                        type: integer
+                      categoryName:
+                        type: string
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No access to this category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /superuser/documents/{docId}:
+    parameters:
+      - name: docId
+        in: path
+        required: true
+        schema:
+          type: integer
+
+    delete:
+      tags:
+        - Super User - Documents
+      summary: Delete document
+      description: Delete a document (only if uploaded by this super user)
+      operationId: deleteSuperuserDocument
+      responses:
+        '200':
+          description: Document deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  deleted:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      filename:
+                        type: string
+                      chunksRemoved:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Cannot delete this document
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /superuser/users:
+    get:
+      tags:
+        - Super User - Users
+      summary: List category users
+      description: Get users subscribed to super user's assigned categories
+      operationId: getSuperuserUsers
+      responses:
+        '200':
+          description: Users list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  assignedCategories:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        categoryId:
+                          type: integer
+                        categoryName:
+                          type: string
+                        categorySlug:
+                          type: string
+                  users:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        email:
+                          type: string
+                        name:
+                          type: string
+                          nullable: true
+                        subscriptions:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              categoryId:
+                                type: integer
+                              categoryName:
+                                type: string
+                              isActive:
+                                type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Super user access required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+    post:
+      tags:
+        - Super User - Users
+      summary: Add subscription
+      description: Add subscription for a user to one of super user's categories
+      operationId: addSuperuserSubscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userEmail:
+                  type: string
+                  format: email
+                categoryId:
+                  type: integer
+              required:
+                - userEmail
+                - categoryId
+      responses:
+        '201':
+          description: Subscription added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  subscription:
+                    type: object
+                    properties:
+                      userId:
+                        type: integer
+                      categoryId:
+                        type: integer
+                      categoryName:
+                        type: string
+                      isActive:
+                        type: boolean
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No access to this category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: User already subscribed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+    delete:
+      tags:
+        - Super User - Users
+      summary: Remove subscription
+      description: Remove subscription from one of super user's categories
+      operationId: removeSuperuserSubscription
+      parameters:
+        - name: userEmail
+          in: query
+          required: true
+          schema:
+            type: string
+            format: email
+        - name: categoryId
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Subscription removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  removed:
+                    type: object
+                    properties:
+                      userId:
+                        type: integer
+                      categoryId:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No access to this category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /superuser/categories:
+    get:
+      tags:
+        - Super User - Categories
+      summary: Get accessible categories
+      description: |
+        Get super user's accessible categories including:
+        - Managed categories (from super_user_categories - full control)
+        - Subscribed categories (from user_subscriptions - read-only access)
+        - Category creation quota information
+      operationId: getSuperuserCategories
+      responses:
+        '200':
+          description: Categories and quota
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  managedCategories:
+                    type: array
+                    description: Categories the superuser can manage (upload docs, manage users)
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        name:
+                          type: string
+                        slug:
+                          type: string
+                        description:
+                          type: string
+                          nullable: true
+                        documentCount:
+                          type: integer
+                        subscriberCount:
+                          type: integer
+                        createdByMe:
+                          type: boolean
+                          description: Whether this superuser created the category
+                  subscribedCategories:
+                    type: array
+                    description: Categories the superuser has read-only access to (for chat)
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        name:
+                          type: string
+                        slug:
+                          type: string
+                        description:
+                          type: string
+                          nullable: true
+                        isActive:
+                          type: boolean
+                  quota:
+                    type: object
+                    description: Category creation quota for this superuser
+                    properties:
+                      used:
+                        type: integer
+                        description: Categories already created by this superuser
+                      limit:
+                        type: integer
+                        description: Maximum categories this superuser can create
+                      canCreate:
+                        type: boolean
+                        description: Whether the superuser can create more categories
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Super user access required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+    post:
+      tags:
+        - Super User - Categories
+      summary: Create category
+      description: Create a new category (within superuser's quota). The category is automatically assigned to the superuser.
+      operationId: createSuperuserCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+                  description: Category name
+                description:
+                  type: string
+                  description: Optional category description
+              required:
+                - name
+      responses:
+        '201':
+          description: Category created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  category:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      name:
+                        type: string
+                      slug:
+                        type: string
+                      description:
+                        type: string
+                        nullable: true
+                      createdBy:
+                        type: string
+                      createdAt:
+                        type: string
+                        format: date-time
+                  quota:
+                    type: object
+                    properties:
+                      used:
+                        type: integer
+                      limit:
+                        type: integer
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Super user access required or quota exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Category already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+    delete:
+      tags:
+        - Super User - Categories
+      summary: Delete category
+      description: Delete a category created by this super user. Also deletes all documents and vector store data.
+      operationId: deleteSuperuserCategory
+      parameters:
+        - name: categoryId
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: Category ID to delete
+      responses:
+        '200':
+          description: Category deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  deleted:
+                    type: object
+                    properties:
+                      categoryId:
+                        type: integer
+                      categoryName:
+                        type: string
+                      documentsDeleted:
+                        type: integer
+                      deleteErrors:
+                        type: array
+                        items:
+                          type: string
+                        description: Any failed document deletions
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Can only delete categories you created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/tools:
+    get:
+      tags:
+        - Admin - Tools
+      summary: List all tools
+      description: List all tools with their configurations (admin only)
+      operationId: listTools
+      responses:
+        '200':
+          description: List of tools
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tools:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Tool'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags:
+        - Admin - Tools
+      summary: Initialize tools
+      description: Initialize all tools to default configurations (admin only)
+      operationId: initializeTools
+      responses:
+        '200':
+          description: Tools initialized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  tools:
+                    type: array
+                    items:
+                      type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/tools/{toolName}:
+    parameters:
+      - name: toolName
+        in: path
+        required: true
+        schema:
+          type: string
+          example: "web_search"
+
+    get:
+      tags:
+        - Admin - Tools
+      summary: Get tool configuration
+      description: Get specific tool configuration with audit history (admin only)
+      operationId: getToolConfig
+      responses:
+        '200':
+          description: Tool configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tool:
+                    $ref: '#/components/schemas/Tool'
+                  configSchema:
+                    type: object
+                  defaultConfig:
+                    type: object
+                  auditHistory:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        operation:
+                          type: string
+                          enum: [create, update, delete]
+                        oldConfig:
+                          type: object
+                        newConfig:
+                          type: object
+                        changedBy:
+                          type: string
+                        changedAt:
+                          type: string
+                          format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - Admin - Tools
+      summary: Update tool configuration
+      description: Update tool configuration (admin only)
+      operationId: updateToolConfig
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                config:
+                  type: object
+                reset:
+                  type: boolean
+                  description: Reset to defaults
+      responses:
+        '200':
+          description: Tool updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tool:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      enabled:
+                        type: boolean
+                      config:
+                        type: object
+                      updatedAt:
+                        type: string
+                        format: date-time
+                      updatedBy:
+                        type: string
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/tools/{toolName}/test:
+    parameters:
+      - name: toolName
+        in: path
+        required: true
+        schema:
+          type: string
+
+    post:
+      tags:
+        - Admin - Tools
+      summary: Test tool
+      description: Test tool connectivity and configuration (admin only)
+      operationId: testTool
+      responses:
+        '200':
+          description: Test result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tool:
+                    type: string
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  latency:
+                    type: number
+                  testedAt:
+                    type: string
+                    format: date-time
+                  testedBy:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/skills:
+    get:
+      tags:
+        - Admin - Skills
+      summary: List all skills
+      description: List all skills with settings (admin only)
+      operationId: listSkills
+      responses:
+        '200':
+          description: List of skills
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  skills:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Skill'
+                  settings:
+                    type: object
+                    properties:
+                      enabled:
+                        type: boolean
+                      maxTotalTokens:
+                        type: integer
+                      debugMode:
+                        type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags:
+        - Admin - Skills
+      summary: Create skill
+      description: Create a new custom skill (admin only)
+      operationId: createSkill
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                promptContent:
+                  type: string
+                triggerType:
+                  type: string
+                  enum: [always, category, keyword]
+                triggerValue:
+                  type: string
+                categoryRestricted:
+                  type: boolean
+                isIndex:
+                  type: boolean
+                priority:
+                  type: integer
+                categoryIds:
+                  type: array
+                  items:
+                    type: integer
+              required:
+                - name
+                - promptContent
+                - triggerType
+      responses:
+        '201':
+          description: Skill created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  skill:
+                    $ref: '#/components/schemas/Skill'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Skill already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+    delete:
+      tags:
+        - Admin - Skills
+      summary: Reset core skills
+      description: Reset all core skills to their defaults (admin only)
+      operationId: resetCoreSkills
+      responses:
+        '200':
+          description: Core skills reset
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  restoredCount:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/skills/{skillId}:
+    parameters:
+      - name: skillId
+        in: path
+        required: true
+        schema:
+          type: integer
+
+    put:
+      tags:
+        - Admin - Skills
+      summary: Update skill
+      description: Update an existing skill (admin only)
+      operationId: updateSkill
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                promptContent:
+                  type: string
+                triggerType:
+                  type: string
+                  enum: [always, category, keyword]
+                triggerValue:
+                  type: string
+                categoryRestricted:
+                  type: boolean
+                isIndex:
+                  type: boolean
+                priority:
+                  type: integer
+                isActive:
+                  type: boolean
+                categoryIds:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        '200':
+          description: Skill updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  skill:
+                    $ref: '#/components/schemas/Skill'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Admin - Skills
+      summary: Delete skill
+      description: Delete a skill (core skills cannot be deleted) (admin only)
+      operationId: deleteSkill
+      responses:
+        '200':
+          description: Skill deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  deleted:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      name:
+                        type: string
+        '400':
+          description: Cannot delete core skill
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/skills/preview:
+    get:
+      tags:
+        - Admin - Skills
+      summary: Preview skill activation
+      description: Preview which skills would activate for a test message (admin only)
+      operationId: previewSkillActivation
+      parameters:
+        - name: message
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: categoryIds
+          in: query
+          schema:
+            type: string
+            description: Comma-separated category IDs
+      responses:
+        '200':
+          description: Skill activation preview
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  activatedSkills:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        name:
+                          type: string
+                        triggerType:
+                          type: string
+                        triggerReason:
+                          type: string
+                  totalTokens:
+                    type: integer
+                  budgetRemaining:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/skills/settings:
+    patch:
+      tags:
+        - Admin - Skills
+      summary: Update skills settings
+      description: Update skills system settings (admin only)
+      operationId: updateSkillsSettings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                maxTotalTokens:
+                  type: integer
+                debugMode:
+                  type: boolean
+      responses:
+        '200':
+          description: Settings updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings:
+                    type: object
+                    properties:
+                      enabled:
+                        type: boolean
+                      maxTotalTokens:
+                        type: integer
+                      debugMode:
+                        type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /categories/{id}/prompt:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+
+    get:
+      tags:
+        - Category Prompts
+      summary: Get category prompt
+      description: Get category-specific prompt configuration
+      operationId: getCategoryPrompt
+      responses:
+        '200':
+          description: Category prompt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryPrompt'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - Category Prompts
+      summary: Update category prompt
+      description: Update category-specific prompt configuration
+      operationId: updateCategoryPrompt
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                promptAddendum:
+                  type: string
+                starterPrompts:
+                  type: array
+                  maxItems: 6
+                  items:
+                    $ref: '#/components/schemas/StarterPrompt'
+      responses:
+        '200':
+          description: Category prompt updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryPrompt'
+        '400':
+          description: Validation error (forbidden phrases, length limits)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Category Prompts
+      summary: Reset category prompt
+      description: Reset category prompt to global system prompt only
+      operationId: resetCategoryPrompt
+      responses:
+        '200':
+          description: Category prompt reset
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  categoryId:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /superuser/tools:
+    get:
+      tags:
+        - Super User - Tools
+      summary: List tools with overrides
+      description: View tools with category-level overrides for assigned categories
+      operationId: getSuperuserTools
+      responses:
+        '200':
+          description: Tools with category overrides
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tools:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        displayName:
+                          type: string
+                        description:
+                          type: string
+                        category:
+                          type: string
+                        globalEnabled:
+                          type: boolean
+                        categories:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              categoryId:
+                                type: integer
+                              categoryName:
+                                type: string
+                              isEnabled:
+                                type: boolean
+                                nullable: true
+                              effectiveEnabled:
+                                type: boolean
+                              branding:
+                                type: object
+                  assignedCategories:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        name:
+                          type: string
+                        slug:
+                          type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Superuser access required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /superuser/tools/{toolName}:
+    parameters:
+      - name: toolName
+        in: path
+        required: true
+        schema:
+          type: string
+
+    post:
+      tags:
+        - Super User - Tools
+      summary: Set category tool override
+      description: Create or update category-level tool override
+      operationId: setCategoryToolOverride
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                categoryId:
+                  type: integer
+                isEnabled:
+                  type: boolean
+                  nullable: true
+                  description: null to inherit from global
+                branding:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                    logoUrl:
+                      type: string
+                    organizationName:
+                      type: string
+                    primaryColor:
+                      type: string
+              required:
+                - categoryId
+      responses:
+        '200':
+          description: Override set
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  categoryId:
+                    type: integer
+                  toolName:
+                    type: string
+                  isEnabled:
+                    type: boolean
+                    nullable: true
+                  branding:
+                    type: object
+                  effectiveEnabled:
+                    type: boolean
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No access to this category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ========== Admin - Data Sources ==========
+
+  /admin/data-sources:
+    get:
+      tags:
+        - Admin - Data Sources
+      summary: List all data sources
+      description: Get all API and CSV data sources
+      operationId: listDataSources
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [api, csv]
+        - name: categoryId
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Data sources list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  apis:
+                    type: array
+                    items:
+                      type: object
+                  csvs:
+                    type: array
+                    items:
+                      type: object
+                  counts:
+                    type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags:
+        - Admin - Data Sources
+      summary: Create API data source
+      operationId: createDataSource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, endpoint]
+      responses:
+        '200':
+          description: Data source created
+        '400':
+          description: Validation error
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /admin/data-sources/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+
+    get:
+      tags:
+        - Admin - Data Sources
+      summary: Get data source
+      operationId: getDataSource
+      responses:
+        '200':
+          description: Data source details
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - Admin - Data Sources
+      summary: Update data source
+      operationId: updateDataSource
+      responses:
+        '200':
+          description: Data source updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Admin - Data Sources
+      summary: Delete data source
+      operationId: deleteDataSource
+      parameters:
+        - name: type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [api, csv]
+      responses:
+        '200':
+          description: Data source deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/data-sources/{id}/test:
+    post:
+      tags:
+        - Admin - Data Sources
+      summary: Test data source
+      operationId: testDataSource
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Test results
+
+  /admin/data-sources/upload-csv:
+    post:
+      tags:
+        - Admin - Data Sources
+      summary: Upload CSV data source
+      operationId: uploadCSVDataSource
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, name]
+      responses:
+        '200':
+          description: CSV uploaded
+
+  /admin/data-sources/parse-openapi:
+    post:
+      tags:
+        - Admin - Data Sources
+      summary: Parse OpenAPI spec
+      operationId: parseOpenAPISpec
+      responses:
+        '200':
+          description: Parsed endpoints
+
+  # ========== Admin - Function APIs ==========
+
+  /admin/function-apis:
+    get:
+      tags:
+        - Admin - Function APIs
+      summary: List Function APIs
+      operationId: listFunctionAPIs
+      parameters:
+        - name: categoryId
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Function APIs list
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Admin - Function APIs
+      summary: Create Function API
+      operationId: createFunctionAPI
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, baseUrl, toolsSchema, endpointMappings]
+      responses:
+        '200':
+          description: Function API created
+        '400':
+          description: Validation error
+
+  /admin/function-apis/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+
+    get:
+      tags:
+        - Admin - Function APIs
+      summary: Get Function API
+      operationId: getFunctionAPI
+      responses:
+        '200':
+          description: Function API details
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - Admin - Function APIs
+      summary: Update Function API
+      operationId: updateFunctionAPI
+      responses:
+        '200':
+          description: Function API updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Admin - Function APIs
+      summary: Delete Function API
+      operationId: deleteFunctionAPI
+      responses:
+        '200':
+          description: Function API deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/function-apis/{id}/test:
+    post:
+      tags:
+        - Admin - Function APIs
+      summary: Test Function API
+      operationId: testFunctionAPI
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Test results
+
+  # ========================================
+  # Agent Bots Admin APIs
+  # ========================================
+
+  /admin/agent-bots:
+    get:
+      tags:
+        - Admin - Agent Bots
+      summary: List all agent bots
+      operationId: listAgentBots
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: List of agent bots
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agentBots:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentBot'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags:
+        - Admin - Agent Bots
+      summary: Create agent bot
+      operationId: createAgentBot
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 100
+                slug:
+                  type: string
+                description:
+                  type: string
+      responses:
+        '201':
+          description: Agent bot created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agentBot:
+                    $ref: '#/components/schemas/AgentBot'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Name or slug already exists
+
+  /admin/agent-bots/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      tags:
+        - Admin - Agent Bots
+      summary: Get agent bot details
+      operationId: getAgentBot
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Agent bot details with versions and API keys
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agentBot:
+                    $ref: '#/components/schemas/AgentBot'
+                  versions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentBotVersion'
+                  apiKeys:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentBotApiKey'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - Admin - Agent Bots
+      summary: Update agent bot
+      operationId: updateAgentBot
+      security:
+        - sessionAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                slug:
+                  type: string
+                description:
+                  type: string
+                is_active:
+                  type: boolean
+      responses:
+        '200':
+          description: Agent bot updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Name or slug already exists
+
+    delete:
+      tags:
+        - Admin - Agent Bots
+      summary: Delete agent bot
+      operationId: deleteAgentBot
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Agent bot deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/agent-bots/{id}/versions:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      tags:
+        - Admin - Agent Bots
+      summary: List versions
+      operationId: listAgentBotVersions
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: List of versions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  versions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentBotVersion'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      tags:
+        - Admin - Agent Bots
+      summary: Create version
+      operationId: createAgentBotVersion
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [input_schema, output_config]
+              properties:
+                version_label:
+                  type: string
+                is_default:
+                  type: boolean
+                input_schema:
+                  $ref: '#/components/schemas/InputSchema'
+                output_config:
+                  $ref: '#/components/schemas/OutputConfig'
+                system_prompt:
+                  type: string
+                llm_model:
+                  type: string
+                temperature:
+                  type: number
+                max_tokens:
+                  type: integer
+                category_ids:
+                  type: array
+                  items:
+                    type: integer
+                skill_ids:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        '201':
+          description: Version created
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/agent-bots/{id}/versions/{versionId}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: versionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      tags:
+        - Admin - Agent Bots
+      summary: Get version details
+      operationId: getAgentBotVersion
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Version details with relations
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - Admin - Agent Bots
+      summary: Update version
+      operationId: updateAgentBotVersion
+      security:
+        - sessionAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                version_label:
+                  type: string
+                is_default:
+                  type: boolean
+                is_active:
+                  type: boolean
+                input_schema:
+                  $ref: '#/components/schemas/InputSchema'
+                output_config:
+                  $ref: '#/components/schemas/OutputConfig'
+                system_prompt:
+                  type: string
+                llm_model:
+                  type: string
+                temperature:
+                  type: number
+                max_tokens:
+                  type: integer
+      responses:
+        '200':
+          description: Version updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Admin - Agent Bots
+      summary: Delete version
+      operationId: deleteAgentBotVersion
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Version deleted
+        '400':
+          description: Cannot delete default version
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/agent-bots/{id}/api-keys:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      tags:
+        - Admin - Agent Bots
+      summary: List API keys
+      operationId: listAgentBotApiKeys
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: List of API keys
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  apiKeys:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentBotApiKey'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      tags:
+        - Admin - Agent Bots
+      summary: Create API key
+      description: The full key is only returned once in the response
+      operationId: createAgentBotApiKey
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 100
+                permissions:
+                  type: array
+                  items:
+                    type: string
+                rate_limit_rpm:
+                  type: integer
+                  minimum: 1
+                  maximum: 1000
+                  default: 60
+                rate_limit_rpd:
+                  type: integer
+                  minimum: 1
+                  maximum: 100000
+                  default: 1000
+                expires_in_days:
+                  type: integer
+      responses:
+        '201':
+          description: API key created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  apiKey:
+                    $ref: '#/components/schemas/AgentBotApiKey'
+                  fullKey:
+                    type: string
+                    description: The full API key - only shown once
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/agent-bots/{id}/api-keys/{keyId}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: keyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    delete:
+      tags:
+        - Admin - Agent Bots
+      summary: Revoke API key
+      operationId: revokeAgentBotApiKey
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: API key revoked
+        '400':
+          description: API key already revoked
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/agent-bots/{id}/analytics:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      tags:
+        - Admin - Agent Bots
+      summary: Get usage analytics
+      operationId: getAgentBotAnalytics
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 30
+      responses:
+        '200':
+          description: Usage analytics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  summary:
+                    type: object
+                    properties:
+                      totalRequests:
+                        type: integer
+                      totalTokens:
+                        type: integer
+                      totalErrors:
+                        type: integer
+                      successRate:
+                        type: number
+                      avgProcessingTimeMs:
+                        type: integer
+                  dailyStats:
+                    type: array
+                    items:
+                      type: object
+                  byOutputType:
+                    type: object
+                  byStatus:
+                    type: object
+                  recentJobs:
+                    type: array
+                    items:
+                      type: object
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ========================================
+  # Agent Bots Public API (API Key Auth)
+  # ========================================
+
+  /agent-bots/{slug}/invoke:
+    post:
+      tags:
+        - Agent Bots - Public
+      summary: Invoke agent bot
+      description: Execute an agent bot with provided input. Supports sync and async modes.
+      operationId: invokeAgentBot
+      security:
+        - apiKeyAuth: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvokeRequest'
+      responses:
+        '200':
+          description: Synchronous execution result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvokeResponse'
+          headers:
+            X-RateLimit-Limit-RPM:
+              schema:
+                type: integer
+            X-RateLimit-Remaining-RPM:
+              schema:
+                type: integer
+            X-RateLimit-Limit-RPD:
+              schema:
+                type: integer
+            X-RateLimit-Remaining-RPD:
+              schema:
+                type: integer
+        '202':
+          description: Async job accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobId:
+                    type: string
+                  status:
+                    type: string
+                    enum: [pending]
+        '401':
+          description: Invalid or missing API key
+        '404':
+          description: Agent bot or version not found
+        '422':
+          description: Input validation error
+        '429':
+          description: Rate limit exceeded
+
+  /agent-bots/{slug}/jobs/{jobId}:
+    get:
+      tags:
+        - Agent Bots - Public
+      summary: Get job status
+      description: Get the status and results of an async job
+      operationId: getAgentBotJob
+      security:
+        - apiKeyAuth: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobStatus'
+        '404':
+          description: Job not found
+
+  /agent-bots/{slug}/jobs/{jobId}/outputs/{outputId}/download:
+    get:
+      tags:
+        - Agent Bots - Public
+      summary: Download output
+      description: Download a generated output file
+      operationId: downloadAgentBotOutput
+      security:
+        - apiKeyAuth: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: outputId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Binary file content
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Output not found
+
+  # ========================================
+  # LLM Management APIs
+  # ========================================
+
+  /admin/llm/providers:
+    get:
+      tags:
+        - Admin - LLM
+      summary: List LLM providers
+      operationId: listLLMProviders
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: List of providers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  providers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LLMProvider'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags:
+        - Admin - LLM
+      summary: Create LLM provider
+      operationId: createLLMProvider
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, name]
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+                apiKey:
+                  type: string
+                apiBase:
+                  type: string
+                enabled:
+                  type: boolean
+      responses:
+        '201':
+          description: Provider created
+        '409':
+          description: Provider already exists
+
+  /admin/llm/providers/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+
+    get:
+      tags:
+        - Admin - LLM
+      summary: Get provider details
+      operationId: getLLMProvider
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Provider details
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - Admin - LLM
+      summary: Update provider
+      operationId: updateLLMProvider
+      security:
+        - sessionAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                apiKey:
+                  type: string
+                apiBase:
+                  type: string
+                enabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Provider updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Admin - LLM
+      summary: Delete or clear provider
+      description: Core providers are cleared rather than deleted
+      operationId: deleteLLMProvider
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Provider deleted or cleared
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/llm/providers/{id}/test:
+    post:
+      tags:
+        - Admin - LLM
+      summary: Test provider connection
+      operationId: testLLMProvider
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Test results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provider:
+                    type: string
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  models:
+                    type: array
+                    items:
+                      type: string
+                  error:
+                    type: string
+
+  /admin/llm/models:
+    get:
+      tags:
+        - Admin - LLM
+      summary: List enabled models
+      operationId: listEnabledModels
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: active
+          in: query
+          schema:
+            type: boolean
+          description: If true, only return active models
+      responses:
+        '200':
+          description: List of enabled models
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  models:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EnabledModel'
+
+    post:
+      tags:
+        - Admin - LLM
+      summary: Enable models (batch)
+      operationId: enableModels
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [models]
+              properties:
+                models:
+                  type: array
+                  items:
+                    type: object
+                    required: [id, providerId, displayName]
+                    properties:
+                      id:
+                        type: string
+                      providerId:
+                        type: string
+                      displayName:
+                        type: string
+                      isDefault:
+                        type: boolean
+                      isActive:
+                        type: boolean
+                      toolCapable:
+                        type: boolean
+                      visionCapable:
+                        type: boolean
+      responses:
+        '200':
+          description: Models enabled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  models:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EnabledModel'
+                  skipped:
+                    type: integer
+
+  /admin/llm/models/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+
+    get:
+      tags:
+        - Admin - LLM
+      summary: Get model details
+      operationId: getEnabledModel
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Model details
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - Admin - LLM
+      summary: Update model
+      operationId: updateEnabledModel
+      security:
+        - sessionAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName:
+                  type: string
+                isDefault:
+                  type: boolean
+                isActive:
+                  type: boolean
+                toolCapable:
+                  type: boolean
+                visionCapable:
+                  type: boolean
+                maxInputTokens:
+                  type: integer
+                sortOrder:
+                  type: integer
+      responses:
+        '200':
+          description: Model updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Admin - LLM
+      summary: Remove model
+      operationId: removeEnabledModel
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Model removed
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/llm/models/refresh:
+    post:
+      tags:
+        - Admin - LLM
+      summary: Refresh model capabilities
+      operationId: refreshModelCapabilities
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Capabilities refreshed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  updated:
+                    type: integer
+                  models:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EnabledModel'
+
+  /admin/llm/discover:
+    get:
+      tags:
+        - Admin - LLM
+      summary: Discover available models
+      operationId: discoverModels
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: provider
+          in: query
+          schema:
+            type: string
+          description: Specific provider ID, or omit for all providers
+      responses:
+        '200':
+          description: Discovered models
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  provider:
+                    type: string
+                  models:
+                    type: array
+                    items:
+                      type: string
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        provider:
+                          type: string
+                        success:
+                          type: boolean
+                        models:
+                          type: array
+                          items:
+                            type: string
+
+  # ========================================
+  # Autonomous Plan Control APIs
+  # ========================================
+
+  /autonomous/{planId}/pause:
+    post:
+      tags:
+        - Autonomous
+      summary: Pause autonomous plan
+      description: Pause an active plan after the current task completes
+      operationId: pauseAutonomousPlan
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Plan paused
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutonomousPlanResponse'
+        '400':
+          description: Cannot pause plan with current status
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /autonomous/{planId}/resume:
+    post:
+      tags:
+        - Autonomous
+      summary: Resume paused plan
+      operationId: resumeAutonomousPlan
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Plan resumed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutonomousPlanResponse'
+        '400':
+          description: Cannot resume plan with current status
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /autonomous/{planId}/stop:
+    post:
+      tags:
+        - Autonomous
+      summary: Stop autonomous plan
+      description: Gracefully stop a plan, keeping all completed work
+      operationId: stopAutonomousPlan
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Plan stopped
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutonomousPlanResponse'
+        '400':
+          description: Cannot stop plan with current status
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /autonomous/{planId}/tasks/{taskId}/skip:
+    post:
+      tags:
+        - Autonomous
+      summary: Skip task in plan
+      operationId: skipAutonomousTask
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Task skipped
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  task_id:
+                    type: integer
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '400':
+          description: Cannot skip task with current status
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      responses:
+        '200':
+          description: Test results
