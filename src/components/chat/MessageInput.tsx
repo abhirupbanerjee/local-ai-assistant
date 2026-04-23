@@ -2,12 +2,11 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { ArrowUp, AlertCircle, Loader2, X } from 'lucide-react';
-import VoiceInput from './VoiceInput';
 import PlusMenu from './PlusMenu';
 import ModelSelector from './ModelSelector';
-import { ChatMode } from './ModeToggle';
 import type { ChatPreferences } from '@/types/stream';
-import { useIsMobile } from '@/hooks/useMediaQuery';
+// Chat mode type (local definition since ModeToggle was removed)
+type ChatMode = 'normal';
 
 interface UrlSourceInfo {
   filename: string;
@@ -31,9 +30,6 @@ interface MessageInputProps {
   // Model readiness — false when no valid model is available for the active route
   modelReady?: boolean;
   onModelStatusChange?: (ready: boolean) => void;
-  // Focus callbacks for sidebar hiding (mobile)
-  onFocus?: () => void;
-  onBlur?: () => void;
 }
 
 export default function MessageInput({
@@ -48,24 +44,21 @@ export default function MessageInput({
   autonomousAdminDisabled,
   modelReady = true,
   onModelStatusChange,
-  onFocus,
-  onBlur,
 }: MessageInputProps) {
   const [message, setMessage] = useState('');
   const [mode, setMode] = useState<ChatMode>('normal');
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const isMobile = useIsMobile();
 
-  // Auto-resize textarea with different max heights for mobile vs desktop
+  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
-      const maxHeight = isMobile ? 112 : 150; // Mobile: 4 lines, Desktop: ~6 lines
+      const maxHeight = 150; // ~6 lines
       textareaRef.current.style.height = 'auto';
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, maxHeight)}px`;
     }
-  }, [message, isMobile]);
+  }, [message]);
 
   const isSubmitDisabled = disabled || !modelReady;
 
@@ -93,8 +86,6 @@ export default function MessageInput({
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
-      // On mobile, Enter always inserts a new line (submit via button only)
-      if (isMobile) return;
       // Shift+Enter or Ctrl/Cmd+Enter = new line
       if (e.shiftKey || e.ctrlKey || e.metaKey) {
         return; // Allow default new line behavior
@@ -103,19 +94,6 @@ export default function MessageInput({
       e.preventDefault();
       handleSubmit();
     }
-  };
-
-  const handleVoiceTranscript = (text: string) => {
-    setMessage((prev) => prev + (prev ? ' ' : '') + text);
-    textareaRef.current?.focus();
-  };
-
-  const handleFocus = () => {
-    onFocus?.();
-  };
-
-  const handleBlur = () => {
-    onBlur?.();
   };
 
   // Handle paste event for file uploads
@@ -229,22 +207,16 @@ export default function MessageInput({
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          onFocus={handleFocus}
-          onBlur={handleBlur}
           placeholder="Ask a question..."
           disabled={isUploading}
-          rows={isMobile ? 2 : 1}
-          enterKeyHint={isMobile ? 'enter' : 'send'}
-          className={`w-full bg-transparent resize-none focus:outline-none text-gray-900 placeholder-gray-400 ${
-            isMobile ? 'min-h-[56px] max-h-[112px]' : 'min-h-[40px] max-h-[150px]'
-          }`}
+          rows={1}
+          className="w-full bg-transparent resize-none focus:outline-none text-gray-900 placeholder-gray-400 min-h-[40px] max-h-[150px]"
         />
 
-        {/* Bottom row: Voice + Plus menu + Model selector + Submit */}
+        {/* Bottom row: Plus menu + Model selector + Submit */}
         <div className="flex items-center justify-between mt-2">
-          {/* Left actions: Voice + Plus menu */}
+          {/* Left actions: Plus menu */}
           <div className="flex items-center gap-1">
-            <VoiceInput onTranscript={handleVoiceTranscript} />
             <PlusMenu
               threadId={threadId}
               currentUploads={currentUploads}

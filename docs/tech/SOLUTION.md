@@ -1,6 +1,6 @@
-# Policy Bot - Solution Architecture
+# Local AI Assistant - Solution Architecture
 
-Comprehensive architecture documentation for Policy Bot - an enterprise RAG platform for policy document management.
+Comprehensive architecture documentation for Local AI Assistant - an enterprise RAG platform for policy document management with local-only deployment support.
 
 ---
 
@@ -33,77 +33,50 @@ Comprehensive architecture documentation for Policy Bot - an enterprise RAG plat
 │                                                                         │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
 │  │                      CORE LIBRARIES                             │    │
-│  │  RAG Pipeline │ Ingest │ DB Layer │ OpenAI │ Auth │ Storage    │    │
+│  │  RAG Pipeline │ Ingest │ DB Layer │ Ollama │ Auth │ Storage    │    │
 │  └─────────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────────┘
-           │            │            │            │
-           ▼            ▼            ▼            ▼
+            │            │            │            │
+            ▼            ▼            ▼            ▼
 ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
 │    DATABASE     │ │  VECTOR STORE   │ │     REDIS       │ │   FILESYSTEM    │
 │  PostgreSQL     │ │     Qdrant      │ │  Cache/Session  │ │  Threads/Docs   │
 │  (Kysely ORM)   │ │                 │ │                 │ │                 │
 └─────────────────┘ └─────────────────┘ └─────────────────┘ └─────────────────┘
-           │
-           ▼
+            │
+            ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    FOUR-TIER LLM ARCHITECTURE                           │
-├──────────────────┬──────────────────┬──────────────────┬────────────────┤
-│  TIER 1: LiteLLM  │ TIER 1b: Claude  │ TIER 2: Direct   │ TIER 3: Direct │
-│  Proxy (Port 4000) │ Direct SDK      │ Provider APIs    │ Google GenAI   │
-│  Chat, Embeddings, │ (@anthropic-    │ (Non-Chat)       │ SDK            │
-│  Transcription     │  ai/sdk)        │                  │ (Image/TTS)    │
-├──────────────────┼──────────────────┼──────────────────┼────────────────┤
-│ ┌──────────────┐ │ Claude chat +    │ Fireworks        │ Gemini Imagen  │
-│ │ OpenAI       │ │ tool calling     │  Reranking       │  (image_gen)   │
-│ │ Gemini       │ │ via native       │  (api.fireworks  │                │
-│ │ Mistral      │ │ streaming        │   .ai)           │ Gemini TTS     │
-│ │ DeepSeek     │ │                  │                  │  (podcast_gen) │
-│ │ Fireworks*   │ │ Why: LiteLLM     │ Fireworks        │                │
-│ └──────────────┘ │ breaks tool call │  Reranking       │ DALL-E 3       │
-│                  │ JSON assembly    │  (api.fireworks  │  (image_gen)   │
-│ * YAML-only,     │ for Anthropic    │   .ai)           │                │
-│   not dynamic    │ streaming        │                  │                │
-│   sync           │                  │ Tavily Search    │                │
-│                  │ Models:          │  (tavily.com)    │                │
-│                  │  claude-opus-*   │                  │                │
-│ Dynamic sync:    │  claude-sonnet-* │ OpenAI TTS       │                │
-│  OpenAI,         │  claude-haiku-*  │  (podcast_gen)   │                │
-│  Anthropic,      │                  │                  │                │
-│  Gemini,         │                  │ Gemini/Mistral   │                │
-│  Mistral,        │                  │  (translation)   │                │
-│  DeepSeek        │                  │                  │                │
-└──────────────────┴──────────────────┴──────────────────┴────────────────┘
-
-           │
-           ├──────────────┬──────────────┬──────────────┬──────────────┬────────────┐
-           ▼              ▼              ▼              ▼              ▼            ▼
-┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────┐ ┌──────────────┐
-│  OPENAI API  │ │  ANTHROPIC   │ │  MISTRAL AI  │ │GOOGLE GEMINI │ │ DEEPSEEK │ │FIREWORKS AI  │
-│ gpt-4.1 (V)  │ │ Claude (V)   │ │ large-3 (V)  │ │gemini-2.5(V) │ │ R1 (🧠)  │ │ MiniMax M2.5 │
-│ gpt-4.1-mini │ │ Sonnet 4.5   │ │ small-3.2(V) │ │ 2.5-flash(V) │ │ chat     │ │ Kimi K2.5    │
-│ gpt-4.1-nano │ │ Haiku 4.5    │ │ Mistral OCR  │ │ gemini embed │ │          │ │ Qwen3        │
-└──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘ └──────────┘ └──────────────┘
-
-┌─────────────────┐
-│  OLLAMA (Local) │  ← Route 3: Direct to ollama:11434/v1 (bypasses LiteLLM)
-│   llama3.2      │
-│   qwen3         │
-│   gpt-oss       │
-└─────────────────┘
-(V) = Vision/Multimodal  (🧠) = Thinking/Extended reasoning
+│                    LLM ARCHITECTURE                                     │
+├─────────────────────────────────────────────────────────────────────────┤
+│  PRIMARY: OLLAMA (Local)                                               │
+│  Direct connection to ollama:11434/v1                                  │
+│  - No data leaves your network                                         │
+│  - Zero API costs                                                      │
+│  - Works in air-gapped environments                                    │
+│                                                                         │
+│  Models: llama3.2, qwen3, gpt-oss, mistral, etc.                      │
+├─────────────────────────────────────────────────────────────────────────┤
+│  OPTIONAL: Cloud Providers (for non-sensitive data only)              │
+│  - OpenAI: gpt-4.1, gpt-4.1-mini (via direct API)                     │
+│  - Anthropic: Claude models (via direct SDK)                           │
+│  - Google: Gemini models                                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│  OPTIONAL: Local Embeddings & Reranking                                │
+│  - Embeddings: mxbai-embed-large, bge-m3 (transformers.js)            │
+│  - Reranking: BGE cross-encoder (local)                                │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Three-Route Architecture
+### Deployment Modes
 
-The four tiers above are grouped into three independently-togglable routes for operational resilience:
+Local AI Assistant supports two deployment modes:
 
-| Route | Tiers | Providers | Connection |
-|-------|-------|-----------|------------|
-| **Route 1** | Tier 1 (LiteLLM) | OpenAI, Gemini, Mistral, DeepSeek | Via LiteLLM proxy |
-| **Route 2** | Tier 1b (Claude Direct) + Fireworks chat | Anthropic, Fireworks AI | Native SDK / direct API |
-| **Route 3** | Local / Ollama | Ollama | OpenAI SDK → ollama:11434/v1 direct |
+| Mode | Use Case | Data Classification |
+|------|----------|---------------------|
+| **Local-Only (Default)** | All inference via Ollama | Government-sensitive / classified — data never leaves your network |
+| **Hybrid** | Ollama + optional cloud for non-sensitive queries | Public / non-sensitive data only |
 
-Admins toggle routes via **Settings > Routes**. Disabling a route removes its models from the chat model selector and greys out its providers/models in LLM Settings (view-only). All three routes can be active simultaneously for cross-route failover. For air-gapped deployments, enable only Route 3. See [features/routes.md](../features/routes.md) and [features/air-gapped-deployment.md](../features/air-gapped-deployment.md) for full details.
+For air-gapped deployments, use Local-Only mode only. Cloud providers can be enabled later for specific non-sensitive use cases.
 
 ---
 

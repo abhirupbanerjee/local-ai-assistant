@@ -3,18 +3,6 @@ import { tavilyWebSearch } from './tools/tavily';
 import { documentGenerationTool } from './tools/docgen';
 import { dataSourceTool } from './tools/data-source';
 import { functionApiTool, getDynamicFunctionDefinitions, isFunctionAPIFunction } from './tools/function-api';
-import { youtubeToolDefinition } from './tools/youtube';
-import { chartGenTool } from './tools/chart-gen';
-
-import { imageGenTool } from './tools/image-gen';
-import { translationTool } from './tools/translation';
-import { shareThreadTool } from './tools/share-thread';
-import { sendEmailTool } from './tools/send-email';
-import { diagramGenTool } from './tools/diagram-gen';
-import { complianceCheckerTool } from './tools/compliance-checker';
-import { xlsxGenTool } from './tools/xlsx-gen';
-import { pptxGenTool } from './tools/pptx-gen';
-import { podcastGenTool } from './tools/podcast-gen';
 import { websiteAnalysisTool } from './tools/pagespeed';
 import { codeAnalysisTool } from './tools/sonarcloud';
 import { loadTestingTool } from './tools/loadtest';
@@ -107,18 +95,6 @@ export const AVAILABLE_TOOLS: Record<string, ToolDefinition> = {
   doc_gen: documentGenerationTool,
   data_source: dataSourceTool,
   function_api: functionApiTool,
-  youtube: youtubeToolDefinition,
-  chart_gen: chartGenTool,
-
-  image_gen: imageGenTool,
-  translation: translationTool,
-  share_thread: shareThreadTool,
-  send_email: sendEmailTool,
-  diagram_gen: diagramGenTool,
-  compliance_checker: complianceCheckerTool,
-  xlsx_gen: xlsxGenTool,
-  pptx_gen: pptxGenTool,
-  podcast_gen: podcastGenTool,
   website_analysis: websiteAnalysisTool,
   code_analysis: codeAnalysisTool,
   load_testing: loadTestingTool,

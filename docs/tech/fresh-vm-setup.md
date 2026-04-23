@@ -1,6 +1,6 @@
-# Fresh VM Setup Guide for Policy Bot
+# Fresh VM Setup Guide for Local AI Assistant
 
-Complete step-by-step instructions for deploying Policy Bot on a fresh Ubuntu VM.
+Complete step-by-step instructions for deploying Local AI Assistant on a fresh Ubuntu VM.
 
 ---
 
@@ -27,8 +27,8 @@ Complete step-by-step instructions for deploying Policy Bot on a fresh Ubuntu VM
 | Component | Minimum | Recommended |
 |-----------|---------|-------------|
 | CPU | 2 cores | 4+ cores |
-| RAM | 4 GB | 8+ GB |
-| Storage | 20 GB | 50+ GB SSD |
+| RAM | 4 GB | 8+ GB (16GB recommended for local models) |
+| Storage | 20 GB | 100+ GB SSD |
 | Network | 100 Mbps | 1 Gbps |
 
 ### Software Requirements
@@ -42,17 +42,16 @@ Complete step-by-step instructions for deploying Policy Bot on a fresh Ubuntu VM
 
 - Domain name pointing to server IP
 - Ports 80 and 443 open for inbound traffic
-- Outbound access to API endpoints (OpenAI, Anthropic, etc.)
 
-### API Keys (obtain before starting)
+### Local-Only Deployment
 
-At minimum, you need:
-- **OpenAI API Key** - [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+Local AI Assistant is designed for **local-only deployment** using Ollama for all LLM inference. This ensures:
+- No data leaves your network
+- No external API dependencies
+- Works in air-gapped environments
+- Zero API costs for LLM inference
 
-Optional but recommended:
-- **Anthropic API Key** - [console.anthropic.com](https://console.anthropic.com)
-- **Azure AD credentials** - For enterprise SSO
-- **Google OAuth credentials** - For Google login
+**Optional:** For non-sensitive data, you can optionally add cloud LLM providers (OpenAI, Anthropic, etc.) via direct API calls.
 
 ---
 
@@ -74,7 +73,8 @@ sudo apt install -y \
     lsb-release \
     git \
     htop \
-    nano
+    nano \
+    jq
 ```
 
 ### 3. Configure Firewall
@@ -96,11 +96,11 @@ sudo timedatectl set-timezone UTC
 # sudo timedatectl set-timezone America/New_York
 ```
 
-### 5. Configure Swap (if RAM < 8GB)
+### 5. Configure Swap (if RAM < 16GB)
 
 ```bash
-# Create 4GB swap file
-sudo fallocate -l 4G /swapfile
+# Create 8GB swap file (recommended for local models)
+sudo fallocate -l 8G /swapfile
 sudo chmod 600 /swapfile
 sudo mkswap /swapfile
 sudo swapon /swapfile
@@ -161,9 +161,9 @@ sudo apt-mark hold docker-ce docker-ce-cli containerd.io
 
 ```bash
 cd /opt
-sudo git clone https://github.com/your-org/policy-bot.git
-sudo chown -R $USER:$USER policy-bot
-cd policy-bot
+sudo git clone https://github.com/your-org/local-ai-assistant.git
+sudo chown -R $USER:$USER local-ai-assistant
+cd local-ai-assistant
 ```
 
 ### 2. Run Initial Setup Script
@@ -177,7 +177,7 @@ cd policy-bot
 This script:
 - Creates `./data/app` directory
 - Creates `./data/transformers_cache` directory with proper permissions
-- Sets permissions for BGE reranker model caching
+- Sets permissions for local embedding/reranker model caching
 
 > **Note:** The Docker entrypoint also handles permissions automatically, but running setup.sh ensures everything is ready before first start.
 
@@ -202,10 +202,7 @@ Edit `.env` with the following minimum configuration:
 # =============================================================================
 
 # Domain for your deployment
-DOMAIN=policybot.example.com
-
-# OpenAI API Key (required for LLM and embeddings)
-OPENAI_API_KEY=sk-proj-...
+DOMAIN=localai.example.com
 
 # Admin email addresses (comma-separated)
 ADMIN_EMAILS=admin@example.com,ops@example.com
@@ -214,7 +211,7 @@ ADMIN_EMAILS=admin@example.com,ops@example.com
 NEXTAUTH_SECRET=your-32-character-random-string-here
 
 # NextAuth URL (your full domain with https)
-NEXTAUTH_URL=https://policybot.example.com
+NEXTAUTH_URL=https://localai.example.com
 
 # Let's Encrypt email for SSL certificates
 ACME_EMAIL=admin@example.com
@@ -223,10 +220,10 @@ ACME_EMAIL=admin@example.com
 # DATABASE CONFIGURATION
 # =============================================================================
 
-# PostgreSQL (required — SQLite removed March 2026)
-POSTGRES_USER=policybot
+# PostgreSQL (required)
+POSTGRES_USER=localai
 POSTGRES_PASSWORD=your-strong-password-here
-POSTGRES_DB=policybot
+POSTGRES_DB=localai
 
 # =============================================================================
 # VECTOR STORE CONFIGURATION
@@ -260,14 +257,11 @@ CREDENTIALS_ADMIN_PASSWORD=your-secure-initial-password
 ACCESS_MODE=allowlist
 
 # =============================================================================
-# LITELLM PROXY
+# OLLAMA (Local LLM - Primary)
 # =============================================================================
 
-# Route API calls through LiteLLM for multi-provider support
-OPENAI_BASE_URL=http://litellm:4000/v1
-
-# LiteLLM authentication key (generate with: openssl rand -hex 16)
-LITELLM_MASTER_KEY=sk-litellm-your-key-here
+# Ollama API base URL (local inference)
+OLLAMA_API_BASE=http://ollama:11434
 
 # =============================================================================
 # REDIS
@@ -276,28 +270,21 @@ LITELLM_MASTER_KEY=sk-litellm-your-key-here
 REDIS_URL=redis://redis:6379
 
 # =============================================================================
-# OPTIONAL API KEYS
+# OPTIONAL API KEYS (for non-sensitive data only)
 # =============================================================================
 
-# Additional LLM providers
-# ANTHROPIC_API_KEY=          # Required for Claude models (uses direct SDK, not LiteLLM)
-# DEEPSEEK_API_KEY=
-# MISTRAL_API_KEY=
-# GEMINI_API_KEY=
+# Cloud LLM providers (optional - for non-sensitive data only)
+# OPENAI_API_KEY=sk-proj-...    # Only if needed for non-sensitive queries
+# ANTHROPIC_API_KEY=            # Only if needed for non-sensitive queries
 
-# Document processing enhancements
-# AZURE_DI_ENDPOINT=https://your-instance.cognitiveservices.azure.com/
-# AZURE_DI_KEY=
+# Web search (optional)
+# TAVILY_API_KEY=               # For web search capability
 
-# RAG enhancements
-# COHERE_API_KEY=           # For reranking
-# TAVILY_API_KEY=           # For web search
+# Reranking (optional - local BGE reranker is default)
+# COHERE_API_KEY=               # For cloud-based reranking
 
 # Data source encryption (generate with: openssl rand -hex 32)
 # DATA_SOURCE_ENCRYPTION_KEY=
-
-# Local Ollama (if using local models)
-# OLLAMA_API_BASE=http://host.docker.internal:11434
 ```
 
 ### 3. Generate Secrets
@@ -306,13 +293,10 @@ REDIS_URL=redis://redis:6379
 # Generate NEXTAUTH_SECRET
 echo "NEXTAUTH_SECRET=$(openssl rand -base64 32)"
 
-# Generate LITELLM_MASTER_KEY
-echo "LITELLM_MASTER_KEY=sk-litellm-$(openssl rand -hex 16)"
-
 # Generate DATA_SOURCE_ENCRYPTION_KEY (optional)
 echo "DATA_SOURCE_ENCRYPTION_KEY=$(openssl rand -hex 32)"
 
-# Generate strong PostgreSQL password (if using postgres)
+# Generate strong PostgreSQL password
 echo "POSTGRES_PASSWORD=$(openssl rand -base64 24)"
 ```
 
@@ -326,35 +310,37 @@ Before starting, ensure your domain points to the server:
 
 ```bash
 # Verify DNS resolution
-dig policybot.example.com +short
+dig localai.example.com +short
 # Should return your server's IP address
 
 # Or use host command
-host policybot.example.com
+host localai.example.com
 ```
 
 > **Important:** DNS must propagate before Let's Encrypt can issue certificates. Allow 5-15 minutes after DNS changes.
 
 ### 2. Review Docker Compose Profiles
 
-Policy Bot uses Docker Compose profiles to select services:
+Local AI Assistant uses Docker Compose profiles to select services:
 
 | Profile | Service | Use Case |
 |---------|---------|----------|
 | `qdrant` | Qdrant vector store | All deployments |
 | `postgres` | PostgreSQL database | Required (all deployments) |
-| `ollama` | Ollama local LLM | Optional, local inference |
+| `ollama` | Ollama local LLM | Recommended for local-only deployment |
 
-> **Note:** PostgreSQL is required for all deployments. SQLite support was removed in March 2026.
-
-**Deployment combinations:**
+**Recommended deployment (local-only):**
 
 ```bash
-# Standard deployment (PostgreSQL + Qdrant)
-docker compose --profile postgres --profile qdrant up -d
-
-# With local LLM inference (optional)
+# Full local deployment (PostgreSQL + Qdrant + Ollama)
 docker compose --profile postgres --profile qdrant --profile ollama up -d
+```
+
+**Minimal deployment (external Ollama):**
+
+```bash
+# If Ollama runs on a different machine
+docker compose --profile postgres --profile qdrant up -d
 ```
 
 ---
@@ -364,8 +350,8 @@ docker compose --profile postgres --profile qdrant --profile ollama up -d
 ### 1. Build and Start
 
 ```bash
-# Build and start (PostgreSQL + Qdrant)
-docker compose --profile postgres --profile qdrant up -d --build
+# Build and start (PostgreSQL + Qdrant + Ollama)
+docker compose --profile postgres --profile qdrant --profile ollama up -d --build
 ```
 
 ### 2. Monitor Startup
@@ -389,11 +375,11 @@ docker compose ps
 Expected output:
 ```
 NAME                    STATUS                   PORTS
-policy-bot-app          Up (healthy)             0.0.0.0:3000->3000/tcp
-policy-bot-qdrant       Up (healthy)             6333/tcp
-policy-bot-litellm      Up (healthy)             4000/tcp
-policy-bot-redis        Up (healthy)             6379/tcp
-policy-bot-traefik      Up                       0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp
+local-ai-assistant-app  Up (healthy)             0.0.0.0:3000->3000/tcp
+local-ai-assistant-qdrant    Up (healthy)        6333/tcp
+local-ai-assistant-ollama    Up (healthy)        11434/tcp
+local-ai-assistant-redis     Up (healthy)        6379/tcp
+local-ai-assistant-traefik   Up                  0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp
 ```
 
 ### 4. Verify SSL Certificate
@@ -403,7 +389,7 @@ policy-bot-traefik      Up                       0.0.0.0:80->80/tcp, 0.0.0.0:443
 docker compose logs traefik | grep -i certificate
 
 # Test HTTPS
-curl -I https://policybot.example.com
+curl -I https://localai.example.com
 ```
 
 ---
@@ -412,9 +398,9 @@ curl -I https://policybot.example.com
 
 ### 1. First Login (Before OAuth Setup)
 
-Policy Bot supports email/password login by default, allowing initial access without OAuth:
+Local AI Assistant supports email/password login by default, allowing initial access without OAuth:
 
-1. Navigate to `https://policybot.example.com/auth/signin`
+1. Navigate to `https://localai.example.com/auth/signin`
 2. Enter the admin email from `ADMIN_EMAILS` (e.g., `admin@example.com`)
 3. Enter the password from `CREDENTIALS_ADMIN_PASSWORD`
 4. You're now logged in as admin
@@ -446,8 +432,10 @@ Policy Bot supports email/password login by default, allowing initial access wit
 
 #### Configure LLM Settings
 1. Admin → Settings → LLM Configuration
-2. Select default model (e.g., `gpt-4.1-mini`)
+2. Select default model (e.g., `llama3.2` or your preferred Ollama model)
 3. Adjust temperature, max tokens as needed
+
+> **Note:** For local-only deployment, only Ollama models will be available. Cloud providers can be enabled later for non-sensitive data.
 
 #### Configure System Prompt
 1. Admin → Settings → Prompts
@@ -461,10 +449,9 @@ The reranker improves search result quality:
 1. Admin → Settings → Reranker
 2. Enable reranking
 3. Configure provider priority:
-   - **BGE Large** - Best accuracy, ~670MB download on first use
-   - **Cohere** - Fast API-based (requires API key)
+   - **BGE Large** - Best accuracy, ~670MB download on first use (recommended for local)
    - **BGE Base** - Smaller model, ~220MB
-   - **Local** - Legacy bi-encoder
+   - **Cohere** - Fast API-based (requires API key, for non-sensitive data only)
 
 ### 5. Configure OAuth & Disable Credentials (Optional)
 
@@ -509,10 +496,10 @@ Once OAuth is working, you can disable email/password login:
 
 ```bash
 # Application
-curl -s https://policybot.example.com/api/health | jq
+curl -s https://localai.example.com/api/health | jq
 
-# LiteLLM
-docker compose exec litellm curl -s http://localhost:4000/health
+# Ollama
+docker compose exec ollama curl -s http://localhost:11434/api/tags
 
 # Redis
 docker compose exec redis redis-cli ping
@@ -521,15 +508,15 @@ docker compose exec redis redis-cli ping
 # Qdrant
 docker compose exec qdrant curl -s http://localhost:6333/readyz
 
-# PostgreSQL (if using)
-docker compose exec postgres pg_isready -U policybot
+# PostgreSQL
+docker compose exec postgres pg_isready -U localai
 ```
 
 ### 2. Test LLM Connection
 
 ```bash
-# Test via LiteLLM
-docker compose exec litellm curl -s http://localhost:4000/v1/models | jq '.data[].id' | head -5
+# Test Ollama models
+docker compose exec ollama curl -s http://localhost:11434/api/tags | jq '.models[].name'
 ```
 
 ### 3. Test Chat Functionality
@@ -561,7 +548,7 @@ du -sh ./data/*
 docker compose logs traefik | grep -i "certificate\|acme\|error"
 
 # Verify DNS is correct
-dig policybot.example.com +short
+dig localai.example.com +short
 
 # Force certificate renewal (careful - rate limits apply)
 docker compose restart traefik
@@ -570,29 +557,24 @@ docker compose restart traefik
 ### Database Connection Issues
 
 ```bash
-# SQLite - check file exists and permissions
-ls -la ./data/app/policybot.db
-
 # PostgreSQL - check connection
-docker compose exec postgres psql -U policybot -c "SELECT 1"
+docker compose exec postgres psql -U localai -c "SELECT 1"
 
 # Reinitialize database schema
 docker compose exec app npm run db:setup
 ```
 
-### LLM API Errors
+### Ollama Connection Issues
 
 ```bash
-# Check LiteLLM logs
-docker compose logs litellm | tail -50
+# Check Ollama logs
+docker compose logs ollama | tail -50
 
-# Test OpenAI directly
-curl -H "Authorization: Bearer $OPENAI_API_KEY" \
-  https://api.openai.com/v1/models | jq '.data[0].id'
+# Test Ollama API directly
+docker compose exec ollama curl -s http://localhost:11434/api/tags
 
-# Test via LiteLLM
-docker compose exec app curl -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
-  http://litellm:4000/v1/models | jq '.data[0].id'
+# Pull a model if none available
+docker compose exec ollama pull llama3.2
 ```
 
 ### Out of Memory
@@ -602,8 +584,8 @@ docker compose exec app curl -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
 free -h
 docker stats --no-stream
 
-# Add swap if needed
-sudo fallocate -l 4G /swapfile
+# Add more swap if needed
+sudo fallocate -l 8G /swapfile
 sudo chmod 600 /swapfile
 sudo mkswap /swapfile
 sudo swapon /swapfile
@@ -665,12 +647,8 @@ docker stats --no-stream
 
 #### Via Command Line
 ```bash
-# SQLite backup
-docker compose exec app sqlite3 /app/data/policybot.db ".backup '/app/data/backup.db'"
-docker cp policy-bot-app:/app/data/backup.db ./backups/$(date +%Y%m%d).db
-
 # PostgreSQL backup
-docker compose exec postgres pg_dump -U policybot policybot > ./backups/$(date +%Y%m%d).sql
+docker compose exec postgres pg_dump -U localai localai > ./backups/$(date +%Y%m%d).sql
 ```
 
 ### Updates
@@ -680,8 +658,8 @@ docker compose exec postgres pg_dump -U policybot policybot > ./backups/$(date +
 git pull origin main
 
 # Rebuild and restart
-docker compose --profile postgres --profile qdrant down
-docker compose --profile postgres --profile qdrant up -d --build
+docker compose --profile postgres --profile qdrant --profile ollama down
+docker compose --profile postgres --profile qdrant --profile ollama up -d --build
 
 # Check logs for issues
 docker compose logs -f app
@@ -689,22 +667,13 @@ docker compose logs -f app
 
 ### Database Maintenance
 
-#### SQLite
-```bash
-# Reclaim space (monthly)
-docker compose exec app sqlite3 /app/data/policybot.db 'VACUUM;'
-
-# Check integrity
-docker compose exec app sqlite3 /app/data/policybot.db 'PRAGMA integrity_check;'
-```
-
 #### PostgreSQL
 ```bash
 # Analyze tables (automatic, but can run manually)
-docker compose exec postgres psql -U policybot -c "ANALYZE;"
+docker compose exec postgres psql -U localai -c "ANALYZE;"
 
 # Check database size
-docker compose exec postgres psql -U policybot -c "SELECT pg_size_pretty(pg_database_size('policybot'));"
+docker compose exec postgres psql -U localai -c "SELECT pg_size_pretty(pg_database_size('localai'));"
 ```
 
 ### Log Rotation
@@ -745,12 +714,14 @@ echo | openssl s_client -servername policybot.example.com -connect policybot.exa
 
 ## Scaling Recommendations
 
-| Users | Database | Vector Store | RAM | Command |
-|-------|----------|--------------|-----|---------|
-| 1-25 | PostgreSQL | Qdrant | 4GB | `--profile postgres --profile qdrant` |
-| 26-100 | PostgreSQL | Qdrant | 8GB | `--profile postgres --profile qdrant` |
-| 100-250 | PostgreSQL | Qdrant | 16GB | `--profile postgres --profile qdrant` |
-| 250+ | External PostgreSQL | Qdrant Cluster | 32GB+ | Custom infrastructure |
+| Users | Database | Vector Store | RAM | Notes |
+|-------|----------|--------------|-----|-------|
+| 1-25 | PostgreSQL | Qdrant | 8GB | Local Ollama |
+| 26-100 | PostgreSQL | Qdrant | 16GB | Local Ollama |
+| 100-250 | PostgreSQL | Qdrant | 32GB | Local Ollama + more models |
+| 250+ | External PostgreSQL | Qdrant Cluster | 64GB+ | Consider separate Ollama server |
+
+> **Note:** For local-only deployment, RAM requirements are higher to accommodate Ollama models. Consider a separate Ollama server for larger deployments.
 
 ---
 
@@ -759,11 +730,11 @@ echo | openssl s_client -servername policybot.example.com -connect policybot.exa
 ### Common Commands
 
 ```bash
-# Start services
-docker compose --profile postgres --profile qdrant up -d
+# Start services (recommended: with Ollama)
+docker compose --profile postgres --profile qdrant --profile ollama up -d
 
 # Stop services
-docker compose --profile postgres --profile qdrant down
+docker compose --profile postgres --profile qdrant --profile ollama down
 
 # View logs
 docker compose logs -f app
@@ -779,6 +750,9 @@ docker compose exec app sh
 
 # Check service health
 docker compose ps
+
+# Pull a model (if using Ollama)
+docker compose exec ollama pull llama3.2
 ```
 
 ### Important Paths
@@ -786,11 +760,10 @@ docker compose ps
 | Path | Description |
 |------|-------------|
 | `./data/app/` | Application data, uploads |
-| `./data/transformers_cache/` | BGE reranker models (~670MB) |
+| `./data/transformers_cache/` | Local embedding/reranker models |
 | `./data/qdrant/` | Qdrant vectors |
 | `./data/postgres/` | PostgreSQL data |
 | `./data/redis/` | Redis persistence |
-| `./litellm-proxy/litellm_config.yaml` | LLM model configuration |
 | `./.env` | Environment variables |
 
 ### Support
@@ -803,5 +776,5 @@ docker compose ps
 
 ## Changelog
 
+- **2026-04**: Updated for local-only deployment with Ollama
 - **2026-02**: Initial documentation
-- **2026-02**: Added BGE reranker setup, Docker entrypoint permissions fix

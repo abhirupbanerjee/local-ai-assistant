@@ -1042,18 +1042,20 @@ export async function PUT(request: NextRequest) {
       }
 
       case 'ocr': {
-        const { providers, mistralApiKey, azureDiEndpoint, azureDiKey } = settings;
+        // OCR settings simplified in reduced-local branch
+        // Only pdf-parse is available (local, no API key needed)
+        const { providers } = settings;
 
         // Validate providers (optional — omit to keep existing providers)
         if (providers !== undefined) {
-          if (!Array.isArray(providers) || providers.length !== 3) {
+          if (!Array.isArray(providers) || providers.length !== 1) {
             return NextResponse.json<ApiError>(
-              { error: 'Providers must be an array of exactly 3 items', code: 'VALIDATION_ERROR' },
+              { error: 'Providers must be an array of exactly 1 item (pdf-parse)', code: 'VALIDATION_ERROR' },
               { status: 400 }
             );
           }
 
-          const validProviders = ['mistral', 'azure-di', 'pdf-parse'];
+          const validProviders = ['pdf-parse'];
           const seen = new Set<string>();
 
           for (const item of providers) {
@@ -1066,7 +1068,7 @@ export async function PUT(request: NextRequest) {
 
             if (!validProviders.includes(item.provider)) {
               return NextResponse.json<ApiError>(
-                { error: `Invalid provider: ${item.provider}. Must be one of: ${validProviders.join(', ')}`, code: 'VALIDATION_ERROR' },
+                { error: `Invalid provider: ${item.provider}. Only pdf-parse is available in reduced-local branch`, code: 'VALIDATION_ERROR' },
                 { status: 400 }
               );
             }
@@ -1096,57 +1098,17 @@ export async function PUT(request: NextRequest) {
           }
         }
 
-        // Validate Mistral API key (optional)
-        if (mistralApiKey !== undefined && typeof mistralApiKey !== 'string') {
-          return NextResponse.json<ApiError>(
-            { error: 'Mistral API key must be a string', code: 'VALIDATION_ERROR' },
-            { status: 400 }
-          );
-        }
-
-        // Validate Azure DI endpoint (optional)
-        if (azureDiEndpoint !== undefined && typeof azureDiEndpoint !== 'string') {
-          return NextResponse.json<ApiError>(
-            { error: 'Azure DI endpoint must be a string', code: 'VALIDATION_ERROR' },
-            { status: 400 }
-          );
-        }
-
-        if (azureDiEndpoint && !azureDiEndpoint.startsWith('https://')) {
-          return NextResponse.json<ApiError>(
-            { error: 'Azure DI endpoint must be a valid HTTPS URL (e.g., https://your-resource.cognitiveservices.azure.com)', code: 'VALIDATION_ERROR' },
-            { status: 400 }
-          );
-        }
-
-        // Validate Azure DI key (optional)
-        if (azureDiKey !== undefined && typeof azureDiKey !== 'string') {
-          return NextResponse.json<ApiError>(
-            { error: 'Azure DI key must be a string', code: 'VALIDATION_ERROR' },
-            { status: 400 }
-          );
-        }
-
-        // Reset OCR clients if credentials changed (including when cleared)
-        if (mistralApiKey !== undefined) {
-          const { resetMistralOcrClient } = await import('@/lib/mistral-ocr');
-          resetMistralOcrClient();
-        }
-        if (azureDiEndpoint !== undefined || azureDiKey !== undefined) {
-          const { resetAzureDIClient } = await import('@/lib/azure-document-intelligence');
-          resetAzureDIClient();
-        }
+        // Mistral and Azure DI removed in reduced-local branch
+        // Only pdf-parse is available (local, no API key needed)
 
         result = await setOcrSettings({
           ...(providers !== undefined ? {
             providers: providers.map((p: { provider: string; enabled: boolean }) => ({
-              provider: p.provider as 'mistral' | 'azure-di' | 'pdf-parse',
+              provider: p.provider as 'pdf-parse',
               enabled: p.enabled,
             })),
           } : {}),
-          ...(mistralApiKey !== undefined ? { mistralApiKey: mistralApiKey || undefined } : {}),
-          ...(azureDiEndpoint !== undefined ? { azureDiEndpoint: azureDiEndpoint || undefined } : {}),
-          ...(azureDiKey !== undefined ? { azureDiKey: azureDiKey || undefined } : {}),
+          // Mistral and Azure DI settings removed
         }, user.email);
         break;
       }

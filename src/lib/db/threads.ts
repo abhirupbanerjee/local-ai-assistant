@@ -6,7 +6,7 @@
 
 import { execute, queryAll, queryOne, transaction } from './index';
 import { v4 as uuidv4 } from 'uuid';
-import type { Source, ToolCall, GeneratedDocumentInfo, MessageVisualization, GeneratedImageInfo, PodcastHint, DiagramHint, MessageMetadata } from '@/types';
+import type { Source, ToolCall, GeneratedDocumentInfo, MessageVisualization, GeneratedImageInfo, MessageMetadata } from '@/types';
 
 // ============ Types ============
 
@@ -83,8 +83,6 @@ export interface ParsedMessage {
   generatedDocuments: GeneratedDocumentInfo[] | null;
   visualizations: MessageVisualization[] | null;
   generatedImages: GeneratedImageInfo[] | null;
-  generatedDiagrams: DiagramHint[] | null;
-  generatedPodcasts: PodcastHint[] | null;
   metadata: MessageMetadata | null;
   createdAt: Date;
 }
@@ -371,14 +369,13 @@ export function addMessage(
     generatedDocuments?: GeneratedDocumentInfo[];
     visualizations?: MessageVisualization[];
     generatedImages?: GeneratedImageInfo[];
-    generatedPodcasts?: PodcastHint[];
   }
 ): ParsedMessage {
   const messageId = options?.messageId || uuidv4();
 
   execute(`
-    INSERT INTO messages (id, thread_id, role, content, sources_json, attachments_json, tool_calls_json, tool_call_id, tool_name, generated_documents_json, visualizations_json, generated_images_json, generated_podcasts_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO messages (id, thread_id, role, content, sources_json, attachments_json, tool_calls_json, tool_call_id, tool_name, generated_documents_json, visualizations_json, generated_images_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     messageId,
     threadId,
@@ -392,7 +389,6 @@ export function addMessage(
     options?.generatedDocuments ? JSON.stringify(options.generatedDocuments) : null,
     options?.visualizations ? JSON.stringify(options.visualizations) : null,
     options?.generatedImages ? JSON.stringify(options.generatedImages) : null,
-    options?.generatedPodcasts ? JSON.stringify(options.generatedPodcasts) : null,
   ]);
 
   return getMessageById(messageId)!;
@@ -403,7 +399,7 @@ export function addMessage(
  */
 export function getMessageById(messageId: string): ParsedMessage | undefined {
   const msg = queryOne<DbMessage>(`
-    SELECT id, thread_id, role, content, sources_json, attachments_json, tool_calls_json, tool_call_id, tool_name, generated_documents_json, visualizations_json, generated_images_json, generated_podcasts_json, created_at
+    SELECT id, thread_id, role, content, sources_json, attachments_json, tool_calls_json, tool_call_id, tool_name, generated_documents_json, visualizations_json, generated_images_json, created_at
     FROM messages
     WHERE id = ?
   `, [messageId]);
@@ -418,7 +414,7 @@ export function getMessageById(messageId: string): ParsedMessage | undefined {
  */
 export function getMessagesForThread(threadId: string): ParsedMessage[] {
   const messages = queryAll<DbMessage>(`
-    SELECT id, thread_id, role, content, sources_json, attachments_json, tool_calls_json, tool_call_id, tool_name, generated_documents_json, visualizations_json, generated_images_json, generated_podcasts_json, created_at
+    SELECT id, thread_id, role, content, sources_json, attachments_json, tool_calls_json, tool_call_id, tool_name, generated_documents_json, visualizations_json, generated_images_json, created_at
     FROM messages
     WHERE thread_id = ?
     ORDER BY created_at ASC
@@ -444,8 +440,6 @@ function parseMessage(msg: DbMessage): ParsedMessage {
     generatedDocuments: msg.generated_documents_json ? JSON.parse(msg.generated_documents_json) : null,
     visualizations: msg.visualizations_json ? JSON.parse(msg.visualizations_json) : null,
     generatedImages: msg.generated_images_json ? JSON.parse(msg.generated_images_json) : null,
-    generatedDiagrams: msg.generated_diagrams_json ? JSON.parse(msg.generated_diagrams_json) : null,
-    generatedPodcasts: msg.generated_podcasts_json ? JSON.parse(msg.generated_podcasts_json) : null,
     metadata: msg.metadata_json ? JSON.parse(msg.metadata_json) : null,
     createdAt: new Date(msg.created_at),
   };

@@ -14,25 +14,8 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 
-// Lazy imports to avoid circular dependency
-// These functions don't depend on loadConfig, so they're safe to call
-let _litellmFunctions: {
-  getLiteLLMChatModels: () => import('./litellm-validator').ParsedLiteLLMModel[];
-  getLiteLLMToolCapableModels: () => Set<string>;
-} | null = null;
-
-function getLiteLLMFunctions() {
-  if (!_litellmFunctions) {
-    // Dynamic require to avoid circular dependency at module load time
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const validator = require('./litellm-validator');
-    _litellmFunctions = {
-      getLiteLLMChatModels: validator.getLiteLLMChatModels,
-      getLiteLLMToolCapableModels: validator.getLiteLLMToolCapableModels,
-    };
-  }
-  return _litellmFunctions;
-}
+// LiteLLM validator removed in reduced-local branch
+// All model discovery now uses database-enabled models only
 
 // ============ Types ============
 
@@ -369,6 +352,51 @@ function getHardcodedDefaults(): AppConfig {
         cacheEnabled: true,
         cacheTTLSeconds: 3600,
       },
+      'ollama-gemma3:latest': {
+        name: 'Ollama Gemma 3:latest (Local)',
+        description: "Google's Gemma 3 latest model - excellent reasoning and tool calling",
+        provider: 'ollama',
+        temperature: 0.2,
+        maxTokens: 3000,
+        topKChunks: 20,
+        maxContextChunks: 15,
+        similarityThreshold: 0.5,
+        chunkSize: 1200,
+        chunkOverlap: 200,
+        queryExpansionEnabled: true,
+        cacheEnabled: true,
+        cacheTTLSeconds: 3600,
+      },
+      'ollama-gemma4:2b': {
+        name: 'Ollama Gemma 4:2b (Local)',
+        description: "Google's Gemma 4 2B model - efficient with strong reasoning",
+        provider: 'ollama',
+        temperature: 0.2,
+        maxTokens: 2000,
+        topKChunks: 15,
+        maxContextChunks: 10,
+        similarityThreshold: 0.5,
+        chunkSize: 1200,
+        chunkOverlap: 200,
+        queryExpansionEnabled: true,
+        cacheEnabled: true,
+        cacheTTLSeconds: 3600,
+      },
+      'ollama-qwen2.5:2b': {
+        name: 'Ollama Qwen 2.5:2b (Local)',
+        description: 'Alibaba Qwen 2.5 2B - excellent cost-effective local model',
+        provider: 'ollama',
+        temperature: 0.2,
+        maxTokens: 2000,
+        topKChunks: 15,
+        maxContextChunks: 10,
+        similarityThreshold: 0.5,
+        chunkSize: 1200,
+        chunkOverlap: 200,
+        queryExpansionEnabled: true,
+        cacheEnabled: true,
+        cacheTTLSeconds: 3600,
+      },
       'claude-haiku-4-5-20251001': {
         name: 'Claude Haiku 4.5 (Route 2 Fallback)',
         description: 'Anthropic Claude Haiku — fast, direct via Anthropic SDK, bypasses LiteLLM',
@@ -400,9 +428,9 @@ function getHardcodedDefaults(): AppConfig {
         cacheTTLSeconds: 3600,
       },
     },
-    defaultPreset: 'gpt-4.1-mini',
+    defaultPreset: 'ollama-gemma3:latest',
     llm: {
-      model: 'gpt-4.1-mini',
+      model: 'ollama-gemma3:latest',
       temperature: 0.2,
       maxTokens: 2000,
       promptOptimizationMaxTokens: 2000,
@@ -479,6 +507,7 @@ function getHardcodedDefaults(): AppConfig {
         'mistral-large-3', 'mistral-medium-3.1', 'mistral-small-3.2',
         'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite',
         'ollama-llama3.2', 'ollama-qwen3', 'ollama-gpt-oss',
+        'ollama-gemma3:latest', 'ollama-gemma4:2b', 'ollama-qwen2.5:2b',
         'claude-haiku-4-5-20251001', 'fireworks/minimax-m2p5',
       ],
       transcription: 'whisper-1',
@@ -645,51 +674,11 @@ export function clearConfigCache(): void {
 }
 
 /**
- * Get model presets - auto-discovers from LiteLLM config, falls back to hardcoded
- *
- * Priority:
- * 1. Parse litellm_config.yaml and build presets from discovered models
- * 2. Fall back to hardcoded modelPresets if YAML unavailable
+ * Get model presets - returns hardcoded presets
+ * LiteLLM config discovery removed in reduced-local branch
  */
 export function getModelPresetsFromConfig(): Record<string, ModelPresetConfig> {
-  // Try to get models from LiteLLM config first
-  try {
-    const { getLiteLLMChatModels } = getLiteLLMFunctions();
-    const litellmModels = getLiteLLMChatModels();
-
-    if (litellmModels.length > 0) {
-      // Build presets from discovered models
-      const presets: Record<string, ModelPresetConfig> = {};
-
-      for (const model of litellmModels) {
-        // Determine default settings based on model tier
-        const tierSettings = getDefaultSettingsForTier(model.id);
-
-        presets[model.id] = {
-          name: model.name,
-          description: model.description,
-          provider: model.provider,
-          temperature: tierSettings.temperature,
-          maxTokens: tierSettings.maxTokens,
-          // RAG settings (unused but required by interface)
-          topKChunks: tierSettings.topKChunks,
-          maxContextChunks: tierSettings.maxContextChunks,
-          similarityThreshold: 0.5,
-          chunkSize: 1200,
-          chunkOverlap: 200,
-          queryExpansionEnabled: true,
-          cacheEnabled: true,
-          cacheTTLSeconds: 3600,
-        };
-      }
-
-      return presets;
-    }
-  } catch {
-    // Fall through to hardcoded defaults
-  }
-
-  // Fall back to hardcoded defaults
+  // Return hardcoded defaults - LiteLLM removed in reduced-local branch
   return loadConfig().modelPresets;
 }
 
@@ -747,23 +736,11 @@ export function getDefaultEmbeddingModel(): string {
 }
 
 /**
- * Get tool-capable models - auto-discovers from LiteLLM config, falls back to hardcoded
- * Returns a Set for O(1) lookup
+ * Get tool-capable models - returns hardcoded defaults
+ * LiteLLM config discovery removed in reduced-local branch
  */
 export function getToolCapableModels(): Set<string> {
-  // Try to get from LiteLLM config first
-  try {
-    const { getLiteLLMToolCapableModels } = getLiteLLMFunctions();
-    const litellmToolCapable = getLiteLLMToolCapableModels();
-
-    if (litellmToolCapable.size > 0) {
-      return litellmToolCapable;
-    }
-  } catch {
-    // Fall through to hardcoded defaults
-  }
-
-  // Fall back to hardcoded defaults
+  // Return hardcoded defaults - LiteLLM removed in reduced-local branch
   const config = loadConfig();
   const toolCapable = config.models?.toolCapable || [];
   return new Set(toolCapable);

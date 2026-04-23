@@ -40,9 +40,6 @@ import Modal from '@/components/ui/Modal';
 import DataSourcesTab from './DataSourcesTab';
 import FunctionAPITab from './FunctionAPITab';
 // ToolRoutingTab is deprecated - tool routing now handled via Skills
-import ImageGenConfig from './ImageGenConfig';
-import TranslationConfig from './TranslationConfig';
-import PodcastGenConfig from './PodcastGenConfig';
 import WebsiteAnalysisConfig from './WebsiteAnalysisConfig';
 import CodeAnalysisConfig from './CodeAnalysisConfig';
 import LoadTestConfig from './LoadTestConfig';
@@ -1520,33 +1517,9 @@ export default function ToolsTab({ readOnly = false, isSuperuser = false, active
             categoriesPath="/api/admin/categories"
           />
         );
-      case 'image_gen':
-        return (
-          <ImageGenConfig
-            config={editedConfig}
-            onChange={setEditedConfig}
-            disabled={saving}
-          />
-        );
-      case 'translation':
-        return (
-          <TranslationConfig
-            config={editedConfig}
-            onChange={setEditedConfig}
-            disabled={saving}
-          />
-        );
       case 'compliance_checker':
         return (
           <ComplianceCheckerConfig
-            config={editedConfig}
-            onChange={setEditedConfig}
-            disabled={saving}
-          />
-        );
-      case 'podcast_gen':
-        return (
-          <PodcastGenConfig
             config={editedConfig}
             onChange={setEditedConfig}
             disabled={saving}

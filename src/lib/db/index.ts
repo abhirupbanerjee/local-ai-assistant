@@ -10,7 +10,6 @@
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
-import { validateLiteLLMOnStartup } from '../litellm-validator';
 import { seedCoreSkills } from '../skills/seed';
 import { removeCoreFlag } from './skills';
 import { seedDefaultProviders } from './llm-providers';
@@ -72,8 +71,7 @@ export function getDatabase(): Database.Database {
     console.log(`[Skills] Removed is_core flag from ${removedCount} skills`);
   }
 
-  // Validate LiteLLM config (fail fast if default model missing)
-  validateLiteLLMOnStartup();
+  // LiteLLM validator removed in reduced-local branch
 
   return db;
 }

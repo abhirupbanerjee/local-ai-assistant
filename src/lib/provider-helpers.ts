@@ -32,7 +32,38 @@ import { getProviderApiKey, getProviderApiBase } from './db/compat/llm-providers
 
 // Re-export with cleaner names
 export const getApiKey = getProviderApiKey;
-export const getApiBase = getProviderApiBase;
+
+/**
+ * Get API base URL for Ollama with OLLAMA_MODE support
+ * 
+ * OLLAMA_MODE can be:
+ * - "docker": Ollama runs in Docker container (default)
+ * - "system": Ollama runs as native system service
+ * 
+ * If OLLAMA_API_BASE is explicitly set, it takes precedence.
+ */
+export async function getApiBase(providerId: string): Promise<string | null> {
+  if (providerId !== 'ollama') {
+    return getProviderApiBase(providerId);
+  }
+
+  // Check if explicitly configured
+  const explicitBase = await getProviderApiBase('ollama');
+  if (explicitBase) {
+    return explicitBase;
+  }
+
+  // Auto-configure based on OLLAMA_MODE
+  const mode = process.env.OLLAMA_MODE?.toLowerCase() || 'docker';
+  
+  if (mode === 'system') {
+    // System Ollama - typically at localhost:11434
+    return process.env.OLLAMA_SYSTEM_API_BASE || 'http://localhost:11434';
+  }
+  
+  // Docker mode (default) - localhost:11434
+  return process.env.OLLAMA_API_BASE || 'http://localhost:11434';
+}
 
 /**
  * Check if a provider is properly configured (has API key or base URL)

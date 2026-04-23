@@ -29,7 +29,7 @@ import {
 // Type Definitions
 // ============================================================================
 
-type TabType = 'branding' | 'dashboard' | 'categories' | 'documents' | 'users' | 'prompts' | 'tools' | 'skills' | 'agents' | 'tokens' | 'usage' | 'workspaces' | 'settings';
+type TabType = 'branding' | 'dashboard' | 'categories' | 'documents' | 'users' | 'prompts' | 'tools' | 'skills' | 'tokens' | 'usage' | 'settings' | 'ollama';
 
 // Section types for expandable menus
 type DocumentsSection = 'documents' | 'acronyms';
@@ -37,7 +37,7 @@ type UsersSection = 'management' | 'superuser' | 'credentials-auth';
 type PromptsSection = 'system-prompt' | 'category-prompts';
 type AgentsSection = 'config' | 'bots';
 type TokensSection = 'memory' | 'summarization' | 'limits';
-type SettingsSection = 'api-keys' | 'routes' | 'llm' | 'rag' | 'reranker' | 'ocr' | 'speech' | 'cache' | 'backup';
+type SettingsSection = 'api-keys' | 'cache' | 'backup';
 
 // Generic submenu item type
 interface SubmenuItem {
@@ -67,19 +67,9 @@ const MENU_CONFIG: MenuConfigItem[] = [
   { id: 'prompts', label: 'Prompts', icon: MessageSquare, expandable: false },
   { id: 'tools', label: 'Tools', icon: Wrench, expandable: false },
   { id: 'skills', label: 'Skills', icon: Sparkles, expandable: false },
-  { id: 'workspaces', label: 'Workspaces', icon: Layers, expandable: false },
-  {
-    id: 'agents',
-    label: 'Agents',
-    icon: Bot,
-    expandable: true,
-    submenu: [
-      { id: 'config', label: 'Agent Config' },
-      { id: 'bots', label: 'Agent Bots' },
-    ]
-  },
   { id: 'tokens', label: 'Tokens', icon: Coins, expandable: false },
   { id: 'usage', label: 'Usage', icon: BarChart3, expandable: false },
+  { id: 'ollama', label: 'Ollama', icon: Bot, expandable: false },
   {
     id: 'settings',
     label: 'Settings',
@@ -87,12 +77,6 @@ const MENU_CONFIG: MenuConfigItem[] = [
     expandable: true,
     submenu: [
       { id: 'api-keys', label: 'API Keys' },
-      { id: 'routes', label: 'Routes' },
-      { id: 'llm', label: 'LLM' },
-      { id: 'rag', label: 'RAG' },
-      { id: 'reranker', label: 'Reranker' },
-      { id: 'ocr', label: 'Document Processing' },
-      { id: 'speech', label: 'Speech' },
       { id: 'cache', label: 'Cache' },
       { id: 'backup', label: 'Backup' },
     ]
@@ -129,8 +113,6 @@ export const PROMPTS_SUBMENU: { id: PromptsSection; label: string }[] = [
   { id: 'category-prompts', label: 'Category Prompts' },
 ];
 
-export const AGENTS_SUBMENU: { id: AgentsSection; label: string }[] =
-  getMenuConfig('agents')?.submenu as { id: AgentsSection; label: string }[] || [];
 
 export const TOKENS_SUBMENU: { id: TokensSection; label: string }[] = [
   { id: 'memory', label: 'Memory' },
@@ -165,7 +147,6 @@ interface AdminSidebarMenuProps {
   documentsSection: DocumentsSection;
   usersSection: UsersSection;
   promptsSection: PromptsSection;
-  agentsSection: AgentsSection;
   tokensSection: TokensSection;
   settingsSection: SettingsSection;
   userRole?: 'admin' | 'superuser' | 'user';
@@ -173,7 +154,6 @@ interface AdminSidebarMenuProps {
   onDocumentsChange: (section: DocumentsSection) => void;
   onUsersChange: (section: UsersSection) => void;
   onPromptsChange: (section: PromptsSection) => void;
-  onAgentsChange: (section: AgentsSection) => void;
   onTokensChange: (section: TokensSection) => void;
   onSettingsChange: (section: SettingsSection) => void;
 }
@@ -187,7 +167,6 @@ export default function AdminSidebarMenu({
   documentsSection,
   usersSection,
   promptsSection,
-  agentsSection,
   tokensSection,
   settingsSection,
   userRole = 'admin',
@@ -195,7 +174,6 @@ export default function AdminSidebarMenu({
   onDocumentsChange,
   onUsersChange,
   onPromptsChange,
-  onAgentsChange,
   onTokensChange,
   onSettingsChange,
 }: AdminSidebarMenuProps) {
@@ -224,7 +202,6 @@ export default function AdminSidebarMenu({
       case 'documents': return documentsSection;
       case 'users': return usersSection;
       case 'prompts': return promptsSection;
-      case 'agents': return agentsSection;
       case 'tokens': return tokensSection;
       case 'settings': return settingsSection;
       default: return '';
@@ -245,9 +222,6 @@ export default function AdminSidebarMenu({
         break;
       case 'prompts':
         onPromptsChange(sectionId as PromptsSection);
-        break;
-      case 'agents':
-        onAgentsChange(sectionId as AgentsSection);
         break;
       case 'tokens':
         onTokensChange(sectionId as TokensSection);

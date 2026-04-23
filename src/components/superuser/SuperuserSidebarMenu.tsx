@@ -24,8 +24,8 @@ import {
 // Type Definitions
 // ============================================================================
 
-type TabType = 'dashboard' | 'categories' | 'users' | 'documents' | 'prompts' | 'tools' | 'skills' | 'workspaces' | 'agent-bots' | 'settings';
-type SettingsSection = 'llm' | 'rag' | 'reranker' | 'ocr' | 'speech' | 'cache' | 'backup';
+type TabType = 'dashboard' | 'categories' | 'users' | 'documents' | 'prompts' | 'tools' | 'skills' | 'settings';
+type SettingsSection = 'cache' | 'backup';
 
 // Generic submenu item type
 interface SubmenuItem {
@@ -54,19 +54,12 @@ const MENU_CONFIG: MenuConfigItem[] = [
   { id: 'prompts', label: 'Prompts', icon: MessageSquare, expandable: false },
   { id: 'tools', label: 'Tools', icon: Wrench, expandable: false },
   { id: 'skills', label: 'Skills', icon: Sparkles, expandable: false },
-  { id: 'workspaces', label: 'Workspaces', icon: Layers, expandable: false },
-  { id: 'agent-bots', label: 'Agent Bots', icon: Bot, expandable: false },
   {
     id: 'settings',
     label: 'Settings',
     icon: Settings,
     expandable: true,
     submenu: [
-      { id: 'llm', label: 'LLM' },
-      { id: 'rag', label: 'RAG' },
-      { id: 'reranker', label: 'Reranker' },
-      { id: 'ocr', label: 'Document Processing' },
-      { id: 'speech', label: 'Speech' },
       { id: 'cache', label: 'Cache' },
       { id: 'backup', label: 'Backup' },
     ]

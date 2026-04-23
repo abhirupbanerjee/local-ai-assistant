@@ -3,8 +3,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { saveUpload, deleteUpload, getThread, getThreadUploadCount } from '@/lib/threads';
 import { getUploadLimits } from '@/lib/db/compat';
 import { extractWebContent, generateFilenameFromUrl, formatWebContentForIngestion, isTavilyConfigured } from '@/lib/tools/tavily';
-import { getYouTubeConfig, extractWithSupadata } from '@/lib/tools/youtube';
-import { extractVideoId, isYouTubeUrl as checkYouTubeUrl } from '@/lib/youtube';
+// YouTube imports removed in reduced-local branch
 import type { UploadResponse, ApiError } from '@/types';
 
 interface RouteParams {
@@ -14,7 +13,7 @@ interface RouteParams {
 // URL upload request body
 interface UrlUploadRequest {
   url: string;
-  type: 'web' | 'youtube';
+  type: 'web';
 }
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
@@ -78,78 +77,34 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       let filename: string;
       let title: string | undefined;
 
-      if (type === 'youtube') {
-        // Handle YouTube URL
-        if (!checkYouTubeUrl(url)) {
-          return NextResponse.json<ApiError>(
-            { error: 'Invalid YouTube URL', code: 'VALIDATION_ERROR' },
-            { status: 400 }
-          );
-        }
+      // YouTube extraction removed in reduced-local branch
+      // Only web URL extraction is supported
 
-        const videoId = extractVideoId(url);
-        if (!videoId) {
-          return NextResponse.json<ApiError>(
-            { error: 'Could not extract video ID from URL', code: 'VALIDATION_ERROR' },
-            { status: 400 }
-          );
-        }
+      // Handle Web URL
+      if (!isTavilyConfigured()) {
+        return NextResponse.json<ApiError>(
+          { error: 'Web extraction not configured. Contact admin.', code: 'NOT_CONFIGURED' },
+          { status: 400 }
+        );
+      }
 
-        const { config } = await getYouTubeConfig();
-        if (!config.apiKey) {
-          return NextResponse.json<ApiError>(
-            { error: 'YouTube extraction not configured. Contact admin.', code: 'NOT_CONFIGURED' },
-            { status: 400 }
-          );
-        }
+      const results = await extractWebContent([url]);
+      const result = results[0];
 
-        try {
-          const result = await extractWithSupadata(videoId, config.apiKey, config.preferredLanguage);
+      if (!result || !result.success || !result.content) {
+        return NextResponse.json<ApiError>(
+          { error: result?.error || 'Failed to extract web content', code: 'SERVICE_ERROR' },
+          { status: 500 }
+        );
+      }
 
-          // Validate transcript is not empty
-          if (!result.transcript || result.transcript.trim().length === 0) {
-            return NextResponse.json<ApiError>(
-              { error: 'No transcript available for this video. The video may not have captions enabled.', code: 'SERVICE_ERROR' },
-              { status: 400 }
-            );
-          }
-
-          content = `Source: YouTube Video\nURL: ${url}\nVideo ID: ${videoId}\nLanguage: ${result.language}\nExtracted: ${new Date().toISOString()}\n\n---\n\n${result.transcript}`;
-          filename = `youtube-${Date.now()}-${videoId}.txt`;
-          title = `YouTube: ${videoId}`;
-        } catch (error) {
-          return NextResponse.json<ApiError>(
-            { error: error instanceof Error ? error.message : 'Failed to extract YouTube transcript', code: 'SERVICE_ERROR' },
-            { status: 500 }
-          );
-        }
-      } else {
-        // Handle Web URL
-        if (!isTavilyConfigured()) {
-          return NextResponse.json<ApiError>(
-            { error: 'Web extraction not configured. Contact admin.', code: 'NOT_CONFIGURED' },
-            { status: 400 }
-          );
-        }
-
-        const results = await extractWebContent([url]);
-        const result = results[0];
-
-        if (!result || !result.success || !result.content) {
-          return NextResponse.json<ApiError>(
-            { error: result?.error || 'Failed to extract web content', code: 'SERVICE_ERROR' },
-            { status: 500 }
-          );
-        }
-
-        content = formatWebContentForIngestion(url, result.content);
-        filename = generateFilenameFromUrl(url);
-        try {
-          const urlObj = new URL(url);
-          title = urlObj.hostname;
-        } catch {
-          title = undefined;
-        }
+      content = formatWebContentForIngestion(url, result.content);
+      filename = generateFilenameFromUrl(url);
+      try {
+        const urlObj = new URL(url);
+        title = urlObj.hostname;
+      } catch {
+        title = undefined;
       }
 
       // Save extracted content as text file

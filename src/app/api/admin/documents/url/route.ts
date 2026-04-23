@@ -6,8 +6,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
-import { ingestUrls, ingestYouTubeUrl, getUrlIngestionStatus, ingestCrawledSite } from '@/lib/ingest';
-import { isYouTubeUrl } from '@/lib/youtube';
+import { ingestUrls, getUrlIngestionStatus, ingestCrawledSite } from '@/lib/ingest';
+// YouTube imports removed in reduced-local branch
 import { isTavilyConfigured, mapWebsite } from '@/lib/tools/tavily';
 import type { ApiError } from '@/types';
 
@@ -27,7 +27,7 @@ interface WebEntry {
 
 interface UrlIngestionRequest {
   urls?: string[];
-  youtubeUrl?: string;
+  // youtubeUrl removed in reduced-local branch
   name?: string;
   categoryIds?: number[];
   isGlobal?: boolean;
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json() as UrlIngestionRequest;
-    const { urls, youtubeUrl, name, categoryIds, isGlobal, crawlUrl, crawlOptions, includePdfs, entries, dryRun } = body;
+    const { urls, name, categoryIds, isGlobal, crawlUrl, crawlOptions, includePdfs, entries, dryRun } = body;
 
     // Validate name if provided
     if (name && name.length > MAX_NAME_LENGTH) {
@@ -117,44 +117,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Handle single YouTube URL with custom name
-    if (youtubeUrl) {
-      if (!isYouTubeUrl(youtubeUrl)) {
-        return NextResponse.json<ApiError>(
-          { error: 'Invalid YouTube URL', code: 'VALIDATION_ERROR' },
-          { status: 400 }
-        );
-      }
-
-      try {
-        const doc = await ingestYouTubeUrl(youtubeUrl, user.email, {
-          categoryIds: categoryIds || [],
-          isGlobal: isGlobal || false,
-          customName: name,
-        });
-
-        return NextResponse.json<UrlIngestionResponse>({
-          results: [{
-            url: youtubeUrl,
-            success: true,
-            documentId: doc.id,
-            filename: doc.filename,
-            sourceType: 'youtube',
-          }],
-          summary: { total: 1, successful: 1, failed: 0 },
-        }, { status: 202 });
-      } catch (error) {
-        return NextResponse.json<UrlIngestionResponse>({
-          results: [{
-            url: youtubeUrl,
-            success: false,
-            sourceType: 'youtube',
-            error: error instanceof Error ? error.message : 'Failed to extract transcript',
-          }],
-          summary: { total: 1, successful: 0, failed: 1 },
-        }, { status: 207 }); // Multi-status for partial success
-      }
-    }
+    // YouTube URL ingestion removed in reduced-local branch
 
     // Handle unified entries (new websites mode)
     if (entries && Array.isArray(entries) && entries.length > 0) {
@@ -394,9 +357,7 @@ export async function POST(request: NextRequest) {
       try {
         new URL(url);
       } catch {
-        if (!isYouTubeUrl(url)) {
-          invalidUrls.push(url);
-        }
+        invalidUrls.push(url);
       }
     }
 
@@ -407,9 +368,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if web URLs are present but Tavily not configured
-    const hasWebUrls = urls.some(url => !isYouTubeUrl(url));
-    if (hasWebUrls && !isTavilyConfigured()) {
+    // Check if Tavily is configured
+    if (!isTavilyConfigured()) {
       return NextResponse.json<ApiError>(
         { error: 'Web URL extraction requires Tavily API key. Configure in Settings > Web Search.', code: 'NOT_CONFIGURED' },
         { status: 400 }

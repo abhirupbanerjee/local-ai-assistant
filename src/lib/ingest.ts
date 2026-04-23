@@ -28,12 +28,7 @@ import {
 import { getCategoryById } from './db/compat/categories';
 import { extractText, getMimeTypeFromFilename, type ExtractedPage } from './document-extractor';
 import type { DocumentChunk, GlobalDocument } from '@/types';
-import {
-  isYouTubeUrl,
-  extractYouTubeTranscript,
-  formatTranscriptForIngestion,
-  isYouTubeApiConfigured,
-} from './youtube';
+// YouTube imports removed in reduced-local branch
 import {
   extractWebContent,
   formatWebContentForIngestion,
@@ -747,20 +742,16 @@ export interface UrlIngestionResult {
 export async function getUrlIngestionStatus(): Promise<UrlIngestionStatus> {
   const webEnabled = await isTavilyConfigured();
   const crawlEnabled = await isTavilyConfigured(); // Crawl uses same Tavily API key
-  const youtubeSupadataEnabled = await isYouTubeApiConfigured(); // Now checks Supadata config
 
   const messages: string[] = [];
   if (!webEnabled) {
     messages.push('Web URL extraction requires Tavily API key. Configure in Admin > Tools > Web Search.');
   }
-  if (!youtubeSupadataEnabled) {
-    messages.push('YouTube extraction requires Supadata API key. Configure in Admin > Tools > YouTube.');
-  }
 
   return {
     webEnabled,
-    youtubeEnabled: true, // Fallback always available (may fail due to IP blocking)
-    youtubeSupadataEnabled,
+    youtubeEnabled: false, // YouTube removed in reduced-local branch
+    youtubeSupadataEnabled: false,
     crawlEnabled,
     message: messages.length > 0 ? messages.join(' ') : undefined,
   };
@@ -768,30 +759,18 @@ export async function getUrlIngestionStatus(): Promise<UrlIngestionStatus> {
 
 /**
  * Ingest a single YouTube video
+ * @deprecated YouTube ingestion removed in reduced-local branch
  */
 export async function ingestYouTubeUrl(
-  url: string,
-  uploadedBy: string,
-  options?: {
+  _url: string,
+  _uploadedBy: string,
+  _options?: {
     categoryIds?: number[];
     isGlobal?: boolean;
     customName?: string;
   }
 ): Promise<GlobalDocument> {
-  const result = await extractYouTubeTranscript(url);
-
-  if (!result.success) {
-    throw new Error(result.error || 'Failed to extract YouTube transcript');
-  }
-
-  const content = formatTranscriptForIngestion(result);
-  const defaultName = result.videoInfo?.title || `YouTube-${result.videoId}`;
-  const documentName = options?.customName || defaultName;
-
-  return ingestTextContent(content, documentName, uploadedBy, {
-    categoryIds: options?.categoryIds,
-    isGlobal: options?.isGlobal,
-  });
+  throw new Error('YouTube ingestion removed in reduced-local branch');
 }
 
 /**
@@ -857,8 +836,8 @@ export async function ingestWebUrls(
 }
 
 /**
- * Ingest URLs (auto-detects YouTube vs web URLs)
- * Separates YouTube URLs for individual processing and batches web URLs
+ * Ingest URLs (web URLs only - YouTube removed in reduced-local branch)
+ * Batches web URLs for processing
  */
 export async function ingestUrls(
   urls: string[],
@@ -871,28 +850,15 @@ export async function ingestUrls(
   const results: UrlIngestionResult[] = [];
   const webUrls: string[] = [];
 
-  // Process YouTube URLs individually
+  // Filter out YouTube URLs (no longer supported)
   for (const url of urls) {
-    if (isYouTubeUrl(url)) {
-      try {
-        const doc = await ingestYouTubeUrl(url, uploadedBy, {
-          categoryIds: options?.categoryIds,
-          isGlobal: options?.isGlobal,
-        });
-        results.push({
-          url,
-          success: true,
-          document: doc,
-          sourceType: 'youtube',
-        });
-      } catch (error) {
-        results.push({
-          url,
-          success: false,
-          error: error instanceof Error ? error.message : 'Failed to ingest YouTube video',
-          sourceType: 'youtube',
-        });
-      }
+    if (url.includes('youtube.com') || url.includes('youtu.be')) {
+      results.push({
+        url,
+        success: false,
+        error: 'YouTube ingestion removed in reduced-local branch',
+        sourceType: 'youtube',
+      });
     } else {
       webUrls.push(url);
     }

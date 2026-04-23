@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
 import { getThread, deleteThread, updateThreadTitle, setThreadCategories } from '@/lib/threads';
-import { getTaskPlansByThread } from '@/lib/db/compat/task-plans';
+// Task plans removed in reduced-local branch
 import type { ThreadWithMessages, DeleteThreadResponse, UpdateThreadRequest, ApiError } from '@/types';
 
 interface RouteParams {
@@ -28,15 +28,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Get task plans for this thread (most recent completed/active plan for autonomous mode)
-    const taskPlans = await getTaskPlansByThread(threadId);
-    const completedPlan = taskPlans.find(p =>
-      p.status === 'completed' || p.status === 'failed' || p.status === 'active'
-    );
+    // Task plans removed in reduced-local branch
+    // Autonomous mode no longer supported
 
     return NextResponse.json({
       ...thread,
-      taskPlan: completedPlan || null,
+      taskPlan: null,
     });
   } catch (error) {
     console.error('Get thread error:', error);

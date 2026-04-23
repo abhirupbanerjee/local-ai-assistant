@@ -8,8 +8,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
 import { getComplianceStats, getRecentComplianceResults, getToolConfig } from '@/lib/db/compat';
-import { COMPLIANCE_CHECKER_DEFAULTS } from '@/lib/tools/compliance-checker';
+// Compliance checker removed in reduced-local branch
 import type { ApiError } from '@/types';
+
+// Hardcoded defaults - compliance checker removed in reduced-local branch
+const COMPLIANCE_CHECKER_DEFAULTS = {
+  enabled: false,
+  passThreshold: 80,
+  warnThreshold: 60,
+  enableHitl: true,
+  useLlmClarifications: true,
+};
 
 /**
  * GET /api/admin/compliance/stats

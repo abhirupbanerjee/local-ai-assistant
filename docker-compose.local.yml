@@ -1,8 +1,8 @@
 # =============================================================================
-# Policy Bot - Local Development Docker Compose (Hybrid Mode)
+# Local AI Assistant - Local Development Docker Compose
 # =============================================================================
 #
-# This file runs infrastructure services (PostgreSQL, Qdrant, Redis, LiteLLM)
+# This file runs infrastructure services (Qdrant, Redis, Ollama)
 # with ports exposed to the host machine, allowing you to run the Next.js app
 # locally with `npm run dev` while using Docker for infrastructure.
 #
@@ -11,47 +11,21 @@
 #   Stop:   docker compose -f docker-compose.local.yml down
 #   Clean:  docker compose -f docker-compose.local.yml down -v
 #
+# With Ollama: docker compose -f docker-compose.local.yml --profile ollama up -d
+#
 # Make sure your .env.local has:
-#   DATABASE_PROVIDER=postgres
-#   POSTGRES_PASSWORD=<your-password>
-#   DATABASE_URL=postgresql://policybot:<password>@localhost:5432/policybot
-#   VECTOR_STORE_PROVIDER=qdrant
+#   DATABASE_PROVIDER=sqlite
 #   QDRANT_HOST=localhost
 #   REDIS_URL=redis://localhost:6379
-#   OPENAI_BASE_URL=http://localhost:4000/v1
-#   OLLAMA_API_BASE=http://localhost:11434  (when using --profile ollama)
+#   OLLAMA_API_BASE=http://localhost:11434
 #
 # =============================================================================
 
 services:
-  # PostgreSQL Database
-  postgres:
-    image: postgres:16-alpine
-    container_name: policy-bot-postgres-local
-    restart: unless-stopped
-    ports:
-      - "5432:5432"
-    env_file:
-      - .env.local
-    environment:
-      POSTGRES_USER: policybot
-      POSTGRES_PASSWORD: 12f1ecab9910c6253261be41092a916a
-      POSTGRES_DB: policybot
-    volumes:
-      - policybot-pgdata-local:/var/lib/postgresql/data
-      # Auto-run on first init (only executes once when DB is created)
-      - ./src/lib/db/schema/00-create-litellm-db.sql:/docker-entrypoint-initdb.d/00-create-litellm-db.sql:ro
-      - ./src/lib/db/schema/postgres.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U policybot"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # Qdrant Vector Store
   qdrant:
     image: qdrant/qdrant:v1.17.0
-    container_name: policy-bot-qdrant-local
+    container_name: local-ai-assistant-qdrant-local
     restart: unless-stopped
     ports:
       - "6333:6333"  # HTTP API
@@ -74,7 +48,7 @@ services:
   # Redis Cache
   redis:
     image: redis:7-alpine
-    container_name: policy-bot-redis-local
+    container_name: local-ai-assistant-redis-local
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -87,46 +61,12 @@ services:
       timeout: 10s
       retries: 3
 
-  # LiteLLM Proxy
-  litellm:
-    image: ghcr.io/berriai/litellm:v1.82.3-stable.patch.2
-    container_name: policy-bot-litellm-local
-    restart: unless-stopped
-    ports:
-      - "4000:4000"
-    volumes:
-      - ./litellm-proxy/litellm_config.yaml:/app/config.yaml:ro
-    env_file:
-      - .env.local
-    environment:
-      # Override DATABASE_URL from .env.local (which uses localhost) to Docker hostname.
-      # LiteLLM needs a DB for /model/new API (auto-sync models from app).
-      # Uses separate "litellm" database — created by 00-create-litellm-db.sql on first init.
-      - DATABASE_URL=postgresql://policybot:12f1ecab9910c6253261be41092a916a@postgres:5432/litellm
-      - DATABASE_PROVIDER=
-      - POSTGRES_PASSWORD=
-      - DATABASE_POOL_MAX=
-      - DATABASE_POOL_IDLE_TIMEOUT=
-      - DATABASE_POOL_CONNECTION_TIMEOUT=
-      # LiteLLM settings
-      - STORE_MODEL_IN_DB=True
-      - DISABLE_SPEND_LOGS=True
-    command: --config /app/config.yaml --port 4000
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 120s
-
   # Ollama Local LLM Server
   # Start with: docker compose -f docker-compose.local.yml --profile ollama up -d
+  # Models: gemma3:latest, gemma4:2b, qwen2.5:2b
   ollama:
-    image: ollama/ollama:0.18.2
-    container_name: policy-bot-ollama-local
+    image: ollama/ollama:latest
+    container_name: local-ai-assistant-ollama-local
     profiles:
       - ollama
     entrypoint: ["/bin/bash", "/ollama-entrypoint.sh"]
@@ -136,10 +76,13 @@ services:
       - ollama-models-local:/root/.ollama
       - ./scripts/ollama-entrypoint.sh:/ollama-entrypoint.sh:ro
     environment:
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
+      # Default model to pre-load
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma3:latest}
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-5m}
-      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-1}
+      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-2}
       - OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH:-8192}
+      # Pull additional models on startup
+      - OLLAMA_PULL_MODELS=${OLLAMA_PULL_MODELS:-gemma4:2b,qwen2.5:2b}
     deploy:
       resources:
         limits:
@@ -152,7 +95,7 @@ services:
       start_period: 120s
 
 volumes:
-  policybot-pgdata-local:
-    name: policybot-pgdata-local
+  local-ai-assistant-pgdata-local:
+    name: local-ai-assistant-pgdata-local
   ollama-models-local:
-    name: policy-bot-ollama-models-local
+    name: local-ai-assistant-ollama-models-local

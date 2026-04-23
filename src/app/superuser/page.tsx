@@ -10,16 +10,9 @@ import SkillsTab from '@/components/admin/SkillsTab';
 import ToolsTab from '@/components/admin/ToolsTab';
 import StarterPromptsEditor from '@/components/admin/StarterPromptsEditor';
 import SuperuserSidebarMenu from '@/components/superuser/SuperuserSidebarMenu';
-import UnifiedLLMSettings from '@/components/admin/settings/UnifiedLLMSettings';
-import UnifiedRAGSettings from '@/components/admin/settings/UnifiedRAGSettings';
-import RerankerSettingsTab from '@/components/admin/settings/RerankerSettings';
-import DocumentProcessingTab from '@/components/admin/settings/DocumentProcessing';
-import SpeechSettingsTab from '@/components/admin/settings/SpeechSettings';
 import CacheSettingsTab from '@/components/admin/CacheSettingsTab';
-import WorkspacesTab from '@/components/admin/WorkspacesTab';
 import DocumentsManagement from '@/components/superuser/DocumentsManagement';
 import SuperuserDashboard from '@/components/superuser/SuperuserDashboard';
-import SuperuserAgentBotsList from '@/components/superuser/SuperuserAgentBotsList';
 
 interface StarterPrompt {
   label: string;
@@ -111,8 +104,8 @@ interface SubscribedCategory {
 }
 
 // Valid tab types for URL parameter validation
-type SuperuserTabType = 'dashboard' | 'categories' | 'users' | 'documents' | 'prompts' | 'tools' | 'skills' | 'workspaces' | 'agent-bots' | 'settings';
-const VALID_TABS: SuperuserTabType[] = ['dashboard', 'categories', 'users', 'documents', 'prompts', 'tools', 'skills', 'workspaces', 'agent-bots', 'settings'];
+type SuperuserTabType = 'dashboard' | 'categories' | 'users' | 'documents' | 'prompts' | 'tools' | 'skills' | 'settings';
+const VALID_TABS: SuperuserTabType[] = ['dashboard', 'categories', 'users', 'documents', 'prompts', 'tools', 'skills', 'settings'];
 
 function SuperUserPageContent() {
   const router = useRouter();
@@ -176,8 +169,8 @@ function SuperUserPageContent() {
   };
 
   // Settings sidebar section state
-  type SettingsSection = 'llm' | 'rag' | 'reranker' | 'ocr' | 'speech' | 'cache' | 'backup';
-  const [settingsSection, setSettingsSection] = useState<SettingsSection>('llm');
+  type SettingsSection = 'cache' | 'backup';
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('cache');
   const [exportingHistory, setExportingHistory] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
@@ -1011,16 +1004,6 @@ function SuperUserPageContent() {
           <SkillsTab readOnly isSuperuser />
         )}
 
-        {/* Workspaces Section */}
-        {activeTab === 'workspaces' && (
-          <WorkspacesTab isAdmin={false} />
-        )}
-
-        {/* Agent Bots Section */}
-        {activeTab === 'agent-bots' && (
-          <SuperuserAgentBotsList />
-        )}
-
         {/* Settings Section (view only) */}
         {activeTab === 'settings' && (
           <>
@@ -1028,11 +1011,6 @@ function SuperUserPageContent() {
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-500 shrink-0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
               <p className="text-sm text-blue-700">These settings are view only. Only users with the Admin role can make changes.</p>
             </div>
-            {settingsSection === 'llm' && <UnifiedLLMSettings readOnly />}
-            {settingsSection === 'rag' && <UnifiedRAGSettings readOnly />}
-            {settingsSection === 'reranker' && <RerankerSettingsTab readOnly />}
-            {settingsSection === 'ocr' && <DocumentProcessingTab readOnly />}
-            {settingsSection === 'speech' && <SpeechSettingsTab readOnly />}
             {settingsSection === 'cache' && <CacheSettingsTab readOnly />}
             {settingsSection === 'backup' && (
               <div className="bg-white rounded-lg border shadow-sm">

@@ -6,7 +6,43 @@
 
 import { getProviderApiKey, getProviderApiBase } from '../db/compat/llm-providers';
 import { getEnabledModel } from '../db/compat/enabled-models';
-import { generateDisplayName, getProviderFromModelPath } from '../litellm-validator';
+
+// Local implementations - litellm-validator removed in reduced-local branch
+
+/**
+ * Generate a display name from a model ID
+ * Converts technical IDs to user-friendly names
+ */
+function generateDisplayName(modelId: string): string {
+  // Remove common prefixes
+  let name = modelId
+    .replace(/^ollama-/, '')
+    .replace(/^ollama\//, '')
+    .replace(/^litellm\//, '')
+    .replace(/^fireworks\//, '')
+    .replace(/^accounts\/fireworks\/models\//, '');
+
+  // Convert kebab-case to Title Case
+  return name
+    .split(/[-_]/)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+/**
+ * Extract provider from model path/ID
+ * Returns the provider identifier for a given model
+ */
+function getProviderFromModelPath(modelId: string): string {
+  if (modelId.startsWith('ollama-') || modelId.startsWith('ollama/')) return 'ollama';
+  if (modelId.startsWith('fireworks/') || modelId.includes('fireworks')) return 'fireworks';
+  if (modelId.startsWith('gpt-') || modelId.startsWith('o1') || modelId.startsWith('o3')) return 'openai';
+  if (modelId.startsWith('gemini-')) return 'gemini';
+  if (modelId.startsWith('mistral-') || modelId.startsWith('pixtral')) return 'mistral';
+  if (modelId.startsWith('claude-')) return 'anthropic';
+  if (modelId.startsWith('deepseek-')) return 'deepseek';
+  return 'unknown';
+}
 
 // ============ Types ============
 

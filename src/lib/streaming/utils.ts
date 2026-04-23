@@ -6,7 +6,6 @@
  */
 
 import type { StreamEvent, StreamPhase } from '@/types/stream';
-import { getStreamingConfig } from '@/lib/db/compat/agent-config';
 
 /**
  * Create SSE encoder for streaming responses
@@ -97,7 +96,7 @@ const DEFAULT_STREAMING_CONFIG = {
 } as const;
 
 /**
- * Get streaming configuration from database (with fallback to defaults)
+ * Get streaming configuration (fallback to defaults)
  * Returns values in milliseconds for direct use
  */
 export async function getStreamingConfigMs(): Promise<{
@@ -105,17 +104,8 @@ export async function getStreamingConfigMs(): Promise<{
   MAX_STREAM_DURATION_MS: number;
   TOOL_TIMEOUT_MS: number;
 }> {
-  try {
-    const config = await getStreamingConfig();
-    return {
-      KEEPALIVE_INTERVAL_MS: config.keepalive_interval_seconds * 1000,
-      MAX_STREAM_DURATION_MS: config.max_stream_duration_seconds * 1000,
-      TOOL_TIMEOUT_MS: config.tool_timeout_seconds * 1000,
-    };
-  } catch {
-    // Fallback to defaults if DB not available
-    return DEFAULT_STREAMING_CONFIG;
-  }
+  // Return defaults - agent-config module removed in reduced-local branch
+  return DEFAULT_STREAMING_CONFIG;
 }
 
 /**

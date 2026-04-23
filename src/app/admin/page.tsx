@@ -11,19 +11,11 @@ import SkillsTab from '@/components/admin/SkillsTab';
 import ToolsTab from '@/components/admin/ToolsTab';
 import AdminSidebarMenu from '@/components/admin/AdminSidebarMenu';
 import CacheSettingsTab from '@/components/admin/CacheSettingsTab';
-import WorkspacesTab from '@/components/admin/WorkspacesTab';
-import { AgentBotsManagement, AgentBotDetail } from '@/components/admin/agent-bots';
 import MemorySettingsTab from '@/components/admin/settings/MemorySettings';
 import SummarizationSettingsTab from '@/components/admin/settings/SummarizationSettings';
 import SuperuserSettingsTab from '@/components/admin/settings/SuperuserSettings';
 import CredentialsAuthSettingsTab from '@/components/admin/settings/CredentialsAuthSettings';
 import ApiKeysSettings from '@/components/admin/settings/ApiKeysSettings';
-import RoutesSettingsPanel from '@/components/admin/settings/RoutesSettings';
-import UnifiedLLMSettings from '@/components/admin/settings/UnifiedLLMSettings';
-import UnifiedRAGSettings from '@/components/admin/settings/UnifiedRAGSettings';
-import RerankerSettingsTab from '@/components/admin/settings/RerankerSettings';
-import DocumentProcessingTab from '@/components/admin/settings/DocumentProcessing';
-import SpeechSettingsTab from '@/components/admin/settings/SpeechSettings';
 import DashboardPage from '@/components/admin/dashboard/DashboardPage';
 import UserManagement from '@/components/admin/users/UserManagement';
 import CategoriesManagement from '@/components/admin/categories/CategoriesManagement';
@@ -31,9 +23,9 @@ import DocumentsManagement from '@/components/admin/documents/DocumentsManagemen
 import SystemPromptSettings from '@/components/admin/prompts/SystemPromptSettings';
 import CategoryPromptsSettings from '@/components/admin/prompts/CategoryPromptsSettings';
 import BrandingSettingsTab from '@/components/admin/BrandingSettings';
-import AgentSettingsTab from '@/components/admin/AgentSettings';
 import TokenLimitsSettingsTab from '@/components/admin/tokens/TokenLimitsSettings';
 import TokenUsageDashboard from '@/components/admin/TokenUsageDashboard';
+import OllamaModelsTab from '@/components/admin/OllamaModelsTab';
 
 interface AllowedUser {
   id?: number;
@@ -109,13 +101,12 @@ interface AvailableModel {
 }
 
 // New menu structure types - matching AdminSidebarMenu
-type TabType = 'branding' | 'dashboard' | 'categories' | 'documents' | 'users' | 'prompts' | 'tools' | 'skills' | 'agents' | 'tokens' | 'usage' | 'workspaces' | 'settings';
+type TabType = 'branding' | 'dashboard' | 'categories' | 'documents' | 'users' | 'prompts' | 'tools' | 'skills' | 'tokens' | 'usage' | 'settings' | 'ollama';
 type DocumentsSection = 'documents' | 'acronyms';
 type UsersSection = 'management' | 'superuser' | 'credentials-auth';
 type PromptsSection = 'system-prompt' | 'category-prompts';
-type AgentsSection = 'config' | 'bots';
 type TokensSection = 'memory' | 'summarization' | 'limits';
-type SettingsSection = 'api-keys' | 'routes' | 'llm' | 'rag' | 'reranker' | 'ocr' | 'speech' | 'cache' | 'backup';
+type SettingsSection = 'api-keys' | 'cache' | 'backup';
 
 // Legacy types for backward compatibility during migration
 type ToolsSection = 'management' | 'dependencies' | 'routing' | 'conflicts';
@@ -251,8 +242,7 @@ interface SystemStats {
   };
 }
 
-const VALID_SETTINGS_SECTIONS: SettingsSection[] = ['api-keys', 'routes', 'llm', 'rag', 'reranker', 'ocr', 'speech', 'cache', 'backup'];
-const VALID_AGENTS_SECTIONS: AgentsSection[] = ['config', 'bots'];
+const VALID_SETTINGS_SECTIONS: SettingsSection[] = ['api-keys', 'cache', 'backup'];
 
 function AdminPageContent() {
   const router = useRouter();
@@ -268,20 +258,12 @@ function AdminPageContent() {
   const [documentsSection, setDocumentsSection] = useState<DocumentsSection>('documents');
   const [usersSection, setUsersSection] = useState<UsersSection>('management');
   const [promptsSection, setPromptsSection] = useState<PromptsSection>('system-prompt');
-  const [agentsSection, setAgentsSection] = useState<AgentsSection>(
-    VALID_AGENTS_SECTIONS.includes(agentSectionParam as AgentsSection)
-      ? (agentSectionParam as AgentsSection)
-      : 'config'
-  );
   const [tokensSection, setTokensSection] = useState<TokensSection>('memory');
   const [settingsSection, setSettingsSection] = useState<SettingsSection>(
     VALID_SETTINGS_SECTIONS.includes(sectionParam as SettingsSection)
       ? (sectionParam as SettingsSection)
       : 'api-keys'
   );
-
-  // Agent Bots state - track selected bot for detail view
-  const [selectedAgentBotId, setSelectedAgentBotId] = useState<string | null>(null);
 
   // Legacy tools section for backward compatibility
   const [toolsSection, setToolsSection] = useState<ToolsSection>('management');
@@ -302,13 +284,6 @@ function AdminPageContent() {
     setActiveTab('settings');
     setSettingsSection(section);
     router.push(`/admin?tab=settings&section=${section}`, { scroll: false });
-  }, [router]);
-
-  // Handle agents section change - updates both state and URL so section survives remounts
-  const handleAgentsChange = useCallback((section: AgentsSection) => {
-    setActiveTab('agents');
-    setAgentsSection(section);
-    router.push(`/admin?tab=agents&agentSection=${section}`, { scroll: false });
   }, [router]);
 
   const toggleUsersSection = (section: UsersSection) => {
@@ -566,25 +541,12 @@ function AdminPageContent() {
     const section = searchParams.get('section');
     const agentSection = searchParams.get('agentSection');
     if (tab) {
-      // Handle legacy agent URLs
-      if (tab === 'agent') {
-        setActiveTab('agents');
-        setAgentsSection('config');
-        router.replace('/admin?tab=agents&agentSection=config', { scroll: false });
-      } else if (tab === 'agent-bots') {
-        setActiveTab('agents');
-        setAgentsSection('bots');
-        router.replace('/admin?tab=agents&agentSection=bots', { scroll: false });
-      } else {
+      {
         setActiveTab(tab as TabType);
       }
       // Sync settings section from URL
       if (tab === 'settings' && section && VALID_SETTINGS_SECTIONS.includes(section as SettingsSection)) {
         setSettingsSection(section as SettingsSection);
-      }
-      // Sync agents section from URL
-      if (tab === 'agents' && agentSection && VALID_AGENTS_SECTIONS.includes(agentSection as AgentsSection)) {
-        setAgentsSection(agentSection as AgentsSection);
       }
     }
   }, [searchParams, router]); // Only depend on searchParams and router
@@ -1027,7 +989,6 @@ function AdminPageContent() {
           documentsSection={documentsSection}
           usersSection={usersSection}
           promptsSection={promptsSection}
-          agentsSection={agentsSection}
           tokensSection={tokensSection}
           settingsSection={settingsSection}
           userRole={userRole}
@@ -1035,7 +996,6 @@ function AdminPageContent() {
           onDocumentsChange={setDocumentsSection}
           onUsersChange={setUsersSection}
           onPromptsChange={setPromptsSection}
-          onAgentsChange={handleAgentsChange}
           onTokensChange={setTokensSection}
           onSettingsChange={handleSettingsChange}
         />
@@ -1144,32 +1104,12 @@ function AdminPageContent() {
           <>
               {/* API Keys Section */}
               {settingsSection === 'api-keys' && <ApiKeysSettings />}
-              {/* Routes Settings Section */}
-              {settingsSection === 'routes' && <RoutesSettingsPanel />}
-              {/* LLM Settings Section */}
-              {settingsSection === 'llm' && <UnifiedLLMSettings />}
-
-              {/* RAG Settings Section */}
-              {settingsSection === 'rag' && <UnifiedRAGSettings />}
-
-              {/* Branding moved to top-level tab */}
-
-              {/* Reranker Section */}
-              {settingsSection === 'reranker' && <RerankerSettingsTab />}
-
-              {/* Document Processing (OCR) Section */}
-              {settingsSection === 'ocr' && <DocumentProcessingTab />}
-
-              {/* Speech (STT + TTS) Section */}
-              {settingsSection === 'speech' && <SpeechSettingsTab />}
-
-              {/* Memory, Summarization, Limits, and Agent sections removed from Settings - content in Tokens and Agent tabs */}
 
               {/* Cache Section */}
               {settingsSection === 'cache' && (
                 <CacheSettingsTab />
               )}
-              {/* Branding, Backup, Agent, Memory, Summarization, Limits, and Superuser moved to other tabs */}
+              {/* Branding, Backup moved to other tabs */}
           </>
         )}
 
@@ -1233,31 +1173,6 @@ function AdminPageContent() {
           <SkillsTab />
         )}
 
-        {/* Workspaces Tab */}
-        {activeTab === 'workspaces' && (
-          <WorkspacesTab isAdmin={true} />
-        )}
-
-        {/* Agents Tab - expandable with config/bots sections */}
-        {activeTab === 'agents' && (
-          <>
-            {agentsSection === 'config' && (
-              <AgentSettingsTab />
-            )}
-            {agentsSection === 'bots' && (
-              selectedAgentBotId ? (
-                <AgentBotDetail
-                  botId={selectedAgentBotId}
-                  onBack={() => setSelectedAgentBotId(null)}
-                />
-              ) : (
-                <AgentBotsManagement
-                  onSelectBot={(bot) => setSelectedAgentBotId(bot.id)}
-                />
-              )
-            )}
-          </>
-        )}
 
         {/* Backup Tab (now under Settings) */}
         {activeTab === 'settings' && settingsSection === 'backup' && (
@@ -1344,6 +1259,11 @@ function AdminPageContent() {
         {/* Usage Tab - Token Usage Dashboard */}
         {activeTab === 'usage' && (
           <TokenUsageDashboard />
+        )}
+
+        {/* Ollama Tab - Model Management */}
+        {activeTab === 'ollama' && (
+          <OllamaModelsTab />
         )}
         </main>
       </div>

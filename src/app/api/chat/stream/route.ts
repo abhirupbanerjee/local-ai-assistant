@@ -27,10 +27,8 @@ import {
   performRAGRetrieval,
   getStreamingConfigMs,
 } from '@/lib/streaming';
-import { translate } from '@/lib/translation';
 import { TONE_PRESETS } from '@/types/stream';
-import type { Message, StreamEvent, StreamChatRequest, Source, MessageVisualization, GeneratedDocumentInfo, GeneratedImageInfo, ImageContent, PodcastHint, DiagramHint } from '@/types';
-import { complianceCheckerTool, type ComplianceCheckerResult } from '@/lib/tools/compliance-checker';
+import type { Message, StreamEvent, StreamChatRequest, Source, MessageVisualization, GeneratedDocumentInfo, GeneratedImageInfo, ImageContent } from '@/types';
 import { isToolEnabled } from '@/lib/tools';
 import { getImageCapabilities } from '@/lib/config-capability-checker';
 import { getLlmSettings } from '@/lib/db/compat';
@@ -40,8 +38,6 @@ import {
   LlmFallbackError,
   type ModelSwitchEvent,
 } from '@/lib/llm-fallback';
-import { getAutonomousModeEnabled } from '@/lib/db/compat/agent-config';
-import { executeAutonomousWithStreaming } from '@/lib/agent/streaming-executor';
 
 // Route segment config for long-running autonomous tasks
 // 1800s (30 min) matches Traefik proxy timeout for autonomous mode.
@@ -160,115 +156,9 @@ export async function POST(request: NextRequest) {
         await addMessage(user.id, threadId, userMessage);
         await updateThreadTokenCount(threadId, countTokens(message));
 
-        // ============ AUTONOMOUS MODE BRANCH ============
+        // Autonomous mode removed in local-only version
         if (mode === 'autonomous') {
-          // Server-side check: admin may have disabled autonomous mode
-          const autonomousEnabled = await getAutonomousModeEnabled();
-          if (!autonomousEnabled) {
-            send({ type: 'error', code: 'FEATURE_DISABLED', message: 'Autonomous mode has been disabled by admin', recoverable: false });
-            cleanup();
-            safeClose();
-            return;
-          }
-
-          // Get conversation history and category context
-          const conversationHistory = await getMessages(user.id, threadId, 50);
-          const categorySlugs = await getThreadCategorySlugsForQuery(threadId);
-          const categoryIds = thread.categories?.map(c => c.id) || [];
-
-          // Get memory and summary context
-          let memoryContext = '';
-          if (memorySettings.enabled && dbUser) {
-            memoryContext = await getMemoryContext(dbUser.id, categoryIds);
-          }
-
-          let summaryContext = '';
-          const existingSummary = await getThreadSummary(threadId);
-          if (existingSummary) {
-            summaryContext = formatSummaryForContext(existingSummary.summary);
-          }
-
-          // Prepare RAG context (simplified - no document extraction in autonomous mode for now)
-          const ragContext = memoryContext || summaryContext ? `${memoryContext}\n\n${summaryContext}`.trim() : '';
-
-          const assistantMessageId = uuidv4();
-
-          await runWithContextAsync(
-            {
-              threadId,
-              messageId: assistantMessageId,
-              categoryIds: categoryIds,
-              userId: user.id,
-              userMessage: message,
-            },
-            async () => {
-              try {
-                // Execute autonomous plan with streaming
-                const result = await executeAutonomousWithStreaming(
-                  message,
-                  {
-                    ragContext,
-                    // Only include user messages to prevent task type leakage from previous assistant responses
-                    conversationHistory: conversationHistory
-                      .slice(-10)
-                      .filter(m => m.role === 'user')
-                      .map(m => m.content)
-                      .join('\n\n'),
-                    categoryContext: categorySlugs.join(', '),
-                  },
-                  {
-                    threadId,
-                    userId: user.id,
-                    categorySlug: categorySlugs[0],
-                  },
-                  send
-                );
-
-                // Save assistant message with summary AND artifacts
-                const assistantMessage: Message = {
-                  id: assistantMessageId,
-                  role: 'assistant',
-                  content: result.accumulatedContent || result.summary,
-                  generatedDocuments: result.generatedDocuments.length > 0 ? result.generatedDocuments : undefined,
-                  generatedImages: result.generatedImages.length > 0 ? result.generatedImages : undefined,
-                  timestamp: new Date(),
-                };
-
-                await addMessage(user.id, threadId, assistantMessage);
-                await updateThreadTokenCount(threadId, countTokens(result.summary));
-
-                // Link generated outputs to message
-                if (result.generatedDocuments.length > 0 || result.generatedImages.length > 0) {
-                  try {
-                    await linkOutputsToMessage(threadId, assistantMessageId);
-                  } catch (linkError) {
-                    console.error('[Stream] Failed to link autonomous outputs to message:', linkError);
-                  }
-                }
-
-                // Background tasks (non-blocking)
-                if (summarizationSettings.enabled && await shouldSummarize(threadId)) {
-                  summarizeThread(threadId).catch(() => {});
-                }
-
-                if (memorySettings.enabled && memorySettings.autoExtractOnThreadEnd && dbUser) {
-                  const recentMessages = conversationHistory.slice(-10).map(m => ({
-                    role: m.role,
-                    content: m.content,
-                  }));
-                  processConversationForMemory(dbUser.id, categoryIds[0] || null, recentMessages).catch(() => {});
-                }
-
-                // Send completion
-                send({ type: 'done', messageId: assistantMessageId, threadId });
-              } catch (error) {
-                const errorMsg = error instanceof Error ? error.message : 'Autonomous execution failed';
-                send({ type: 'error', code: 'UNKNOWN_ERROR', message: errorMsg, recoverable: false });
-              }
-            }
-          );
-
-          // Autonomous mode complete - cleanup and return
+          send({ type: 'error', code: 'FEATURE_DISABLED', message: 'Autonomous mode is not available in local deployment', recoverable: false });
           cleanup();
           safeClose();
           return;
@@ -380,30 +270,10 @@ export async function POST(request: NextRequest) {
             // Send sources from RAG
             send({ type: 'sources', data: ragResult.sources });
 
-            // ============ Phase 2.5: Resolve Preflight Clarification Config ============
-            // The actual clarification is now handled by the main LLM via the
-            // request_clarification tool (Option B). We only resolve config here to
-            // get the timeout and determine whether to inject the tool.
-            let enableClarification = false;
-            let clarificationTimeoutMs = 120000; // 2-minute default
-            let clarificationSkillName: string | undefined;
-            {
-              const { getComplianceConfig } = await import('@/lib/tools/compliance-checker');
-              const complianceConfig = await getComplianceConfig();
-
-              if (complianceConfig.preflightEnabled) {
-                const { hasPreflightEnabled, findPreflightSkill, resolvePreflightConfig } = await import('@/lib/compliance/preflight');
-                if (hasPreflightEnabled(complianceConfig, ragResult.matchedSkills)) {
-                  const preflightSkill = findPreflightSkill(ragResult.matchedSkills);
-                  if (preflightSkill) {
-                    const resolvedPf = resolvePreflightConfig(complianceConfig, preflightSkill.config);
-                    enableClarification = true;
-                    clarificationTimeoutMs = resolvedPf.timeoutMs;
-                    clarificationSkillName = preflightSkill.name;
-                  }
-                }
-              }
-            }
+            // Preflight clarification removed in local-only version
+            const enableClarification = false;
+            const clarificationTimeoutMs = 120000;
+            const clarificationSkillName: string | undefined = undefined;
 
             // ============ Build Model Fallback Chain ============
             // Determine models to try based on capabilities and health status
@@ -443,8 +313,6 @@ export async function POST(request: NextRequest) {
             const visualizations: MessageVisualization[] = [];
             const documents: GeneratedDocumentInfo[] = [];
             const images: GeneratedImageInfo[] = [];
-            const diagrams: DiagramHint[] = [];
-            const podcasts: PodcastHint[] = [];
             const webSources: Source[] = [];
 
             // Prepare system prompt with tone injection if needed
@@ -454,10 +322,7 @@ export async function POST(request: NextRequest) {
               effectiveSystemPrompt = `${tonePrompt}\n\n${ragResult.systemPrompt}`;
             }
 
-            // Append clarification instruction when preflight skill is active
-            if (enableClarification) {
-              effectiveSystemPrompt += '\n\nIf the user\'s request is genuinely ambiguous after reviewing all documents and conversation history, call request_clarification with 2-4 specific options. Do not ask about topics already covered in the documents or prior conversation.';
-            }
+            // Clarification feature removed in local-only version
 
             // Determine which tools to exclude based on user preferences
             const excludeTools: string[] = [];
@@ -486,7 +351,7 @@ export async function POST(request: NextRequest) {
               onToolEnd: (name: string, success: boolean, duration: number, error?: string) => {
                 send({ type: 'tool_end', name, success, duration, error });
               },
-              onArtifact: (type: 'visualization' | 'document' | 'image' | 'diagram' | 'podcast', data: MessageVisualization | GeneratedDocumentInfo | GeneratedImageInfo | DiagramHint | PodcastHint) => {
+              onArtifact: (type: 'visualization' | 'document' | 'image', data: MessageVisualization | GeneratedDocumentInfo | GeneratedImageInfo) => {
                 if (type === 'visualization') {
                   const viz = data as MessageVisualization;
                   visualizations.push(viz);
@@ -499,50 +364,10 @@ export async function POST(request: NextRequest) {
                   const img = data as GeneratedImageInfo;
                   images.push(img);
                   send({ type: 'artifact', subtype: 'image', data: img });
-                } else if (type === 'diagram') {
-                  const diagram = data as DiagramHint;
-                  diagrams.push(diagram);
-                  send({ type: 'artifact', subtype: 'diagram', data: diagram });
-                } else if (type === 'podcast') {
-                  const podcast = data as PodcastHint;
-                  podcasts.push(podcast);
-                  send({ type: 'artifact', subtype: 'podcast', data: podcast });
                 }
               },
-              // Called when main LLM invokes request_clarification tool
-              onClarification: async (question: string, options: string[], allowFreeText: boolean): Promise<string | null> => {
-                const { createPreflightResolver } = await import('@/lib/streaming/preflight-resolver');
-
-                const event = {
-                  type: 'hitl_preflight' as const,
-                  messageId: assistantMessageId,
-                  questions: [{
-                    id: 'q1',
-                    context: '',
-                    question,
-                    options: options.map((label) => ({
-                      id: label, // use label as ID so enrichedContext contains readable text
-                      label,
-                      action: 'retry_with' as const,
-                    })),
-                    allowFreeText,
-                  }],
-                  fallbackActions: [
-                    { action: 'continue' as const, label: 'Continue without clarification' },
-                    { action: 'cancel' as const, label: 'Cancel' },
-                  ],
-                  timeoutMs: clarificationTimeoutMs,
-                  skillName: clarificationSkillName,
-                };
-
-                send({ type: 'status', phase: 'clarifying_question', content: 'Waiting for your input...' });
-                send({ type: 'hitl_preflight', data: event });
-
-                const result = await createPreflightResolver(assistantMessageId, clarificationTimeoutMs, request.signal);
-
-                if (!result?.enrichedContext) return null;
-                return result.enrichedContext;
-              },
+              // Clarification feature removed in local-only version
+              onClarification: undefined,
             };
 
             // Track which model was actually used
@@ -626,73 +451,13 @@ export async function POST(request: NextRequest) {
             const allSources = [...ragResult.sources, ...webSources];
 
             // ============ Phase 4: Finalize Content ============
-            // For English: content tokens were already streamed token-by-token via onChunk
+            // Content tokens were already streamed token-by-token via onChunk
             // during generateResponseWithTools above — no further action needed.
-            // For non-English: translate the accumulated content, then chunk it to the client.
+            // Translation feature removed in local-only version.
 
-            let fullContent = toolResult.content;
+            const fullContent = toolResult.content;
 
-            if (targetLanguage && targetLanguage !== 'en') {
-              send({ type: 'status', phase: 'generating', content: getPhaseMessage('generating') });
-              try {
-                const translationResult = await translate({
-                  text: fullContent,
-                  targetLanguage,
-                  context: 'policy document assistant response',
-                  formalStyle: true,
-                });
-                if (translationResult.success) {
-                  fullContent = translationResult.translated;
-                } else {
-                  console.warn('[Stream] Translation failed:', translationResult.error);
-                }
-              } catch (translationError) {
-                console.warn('[Stream] Translation failed, using original response:', translationError);
-              }
-              // Stream translated content in chunks (true LLM streaming not possible post-translation)
-              const chunkSize = 20;
-              for (let i = 0; i < fullContent.length; i += chunkSize) {
-                send({ type: 'chunk', content: fullContent.slice(i, i + chunkSize) });
-                await new Promise(resolve => setTimeout(resolve, 10));
-              }
-            }
-
-            // ============ Phase 5: Compliance Checking ============
-            // Run compliance check if:
-            // 1. Compliance checker tool is globally enabled
-            // 2. At least one matched skill has compliance explicitly enabled (opt-in model)
-            const skillsWithComplianceEnabled = ragResult.matchedSkills.filter(
-              s => s.complianceConfig?.enabled === true
-            );
-
-            if ((await isToolEnabled('compliance_checker')) && skillsWithComplianceEnabled.length > 0) {
-              try {
-                const complianceResultStr = await complianceCheckerTool.execute({
-                  userMessage: message,
-                  response: fullContent,
-                  toolExecutions: toolResult.toolExecutionResults,
-                  matchedSkills: skillsWithComplianceEnabled, // Only pass skills with compliance enabled
-                  toolRoutingMatches: ragResult.toolRoutingMatches,
-                  messageId: assistantMessageId,
-                  conversationId: threadId,
-                });
-
-                const complianceResult: ComplianceCheckerResult = JSON.parse(complianceResultStr);
-
-                if (complianceResult.success) {
-                  // Send compliance decision event
-                  send({ type: 'compliance', data: complianceResult.decision });
-
-                  // If HITL was triggered, send clarification event
-                  if (complianceResult.hitlEvent) {
-                    send({ type: 'hitl_clarification', data: complianceResult.hitlEvent });
-                  }
-                }
-              } catch (complianceError) {
-                // Log but don't fail the request for compliance check errors
-                console.error('[Stream] Compliance check error:', complianceError);
-              }
-            }
+            // Compliance checking removed in local-only version
 
             // ============ Save & Cleanup ============
             const completionTokens = toolResult.totalTokens || countTokens(fullContent);
@@ -703,8 +468,6 @@ export async function POST(request: NextRequest) {
               sources: allSources,
               generatedDocuments: documents.length > 0 ? documents : undefined,
               generatedImages: images.length > 0 ? images : undefined,
-              generatedDiagrams: diagrams.length > 0 ? diagrams : undefined,
-              generatedPodcasts: podcasts.length > 0 ? podcasts : undefined,
               visualizations: visualizations.length > 0 ? visualizations : undefined,
               timestamp: new Date(),
               metadata: {
@@ -720,9 +483,9 @@ export async function POST(request: NextRequest) {
             await addMessage(user.id, threadId, assistantMessage);
             await updateThreadTokenCount(threadId, countTokens(fullContent));
 
-            // Link any generated outputs (documents, images, diagrams, podcasts) to this message
+            // Link any generated outputs (documents, images) to this message
             // This must happen after addMessage since message_id is a foreign key
-            if (documents.length > 0 || images.length > 0 || diagrams.length > 0 || podcasts.length > 0) {
+            if (documents.length > 0 || images.length > 0) {
               try {
                 await linkOutputsToMessage(threadId, assistantMessageId);
               } catch (linkError) {

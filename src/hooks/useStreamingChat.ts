@@ -22,8 +22,6 @@ import type {
   MessageVisualization,
   GeneratedDocumentInfo,
   GeneratedImageInfo,
-  DiagramHint,
-  PodcastHint,
   ChatPreferences,
 } from '@/types';
 import type { PreflightClarificationEvent, HitlClarificationEvent } from '@/types/compliance';
@@ -80,10 +78,6 @@ export interface StreamingState {
   documents: GeneratedDocumentInfo[];
   /** Generated images from tools */
   images: GeneratedImageInfo[];
-  /** Generated diagrams from tools */
-  diagrams: DiagramHint[];
-  /** Generated podcasts from tools */
-  podcasts: PodcastHint[];
   /** Autonomous plan state (for autonomous mode) */
   autonomousPlan: AutonomousPlanState | null;
   /** Budget warning info (for autonomous mode) */
@@ -109,7 +103,7 @@ export interface StreamingState {
 
 export interface UseStreamingChatOptions {
   /** Callback when streaming completes successfully */
-  onComplete?: (messageId: string, content: string, sources: Source[], visualizations: MessageVisualization[], documents: GeneratedDocumentInfo[], images: GeneratedImageInfo[], diagrams: DiagramHint[], podcasts: PodcastHint[], metadata?: import('@/types').MessageMetadata, thinkingContent?: string) => void;
+  onComplete?: (messageId: string, content: string, sources: Source[], visualizations: MessageVisualization[], documents: GeneratedDocumentInfo[], images: GeneratedImageInfo[], metadata?: import('@/types').MessageMetadata, thinkingContent?: string) => void;
   /** Callback on error */
   onError?: (code: string, message: string, recoverable: boolean) => void;
   /** Callback when phase changes */
@@ -190,8 +184,6 @@ const initialState: StreamingState = {
   visualizations: [],
   documents: [],
   images: [],
-  diagrams: [],
-  podcasts: [],
   autonomousPlan: null,
   budgetWarning: null,
   error: null,
@@ -337,16 +329,6 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
           setState(prev => ({
             ...prev,
             images: [...prev.images, event.data],
-          }));
-        } else if (event.subtype === 'diagram') {
-          setState(prev => ({
-            ...prev,
-            diagrams: [...prev.diagrams, event.data],
-          }));
-        } else if (event.subtype === 'podcast') {
-          setState(prev => ({
-            ...prev,
-            podcasts: [...prev.podcasts, event.data],
           }));
         }
         break;
@@ -702,7 +684,7 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
             phase: 'complete',
           },
         }));
-        onComplete?.(event.messageId, finalContent, doneState.sources, doneState.visualizations, doneState.documents, doneState.images, doneState.diagrams, doneState.podcasts, metadata, finalThinking || undefined);
+        onComplete?.(event.messageId, finalContent, doneState.sources, doneState.visualizations, doneState.documents, doneState.images, metadata, finalThinking || undefined);
         break;
       }
 

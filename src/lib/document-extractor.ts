@@ -13,8 +13,7 @@
  *             - pdf-parse (PDF only, local fallback)
  */
 
-import { extractTextWithMistral } from './mistral-ocr';
-import { extractTextWithAzureDI } from './azure-document-intelligence';
+// Mistral OCR and Azure DI imports removed in reduced-local branch
 import pdf from 'pdf-parse';
 import mammoth from 'mammoth';
 import ExcelJS from 'exceljs';
@@ -36,7 +35,7 @@ export interface ExtractionResult {
   text: string;
   numPages: number;
   pages: ExtractedPage[];
-  provider: 'mistral' | 'azure-di' | 'pdf-parse' | 'mammoth' | 'exceljs' | 'officeparser';
+  provider: 'pdf-parse' | 'mammoth' | 'exceljs' | 'officeparser';
 }
 
 // ============================================
@@ -238,97 +237,35 @@ export async function extractText(
     }
   }
 
-  // Load provider priority from admin settings
-  const ocrSettings = await getOcrSettings();
+  // Mistral OCR and Azure DI removed in reduced-local branch
+  // Only local extraction methods are used (pdf-parse, mammoth, exceljs, officeparser)
 
-  for (let i = 0; i < ocrSettings.providers.length; i++) {
-    const { provider, enabled } = ocrSettings.providers[i];
-    const tierLabel = i === 0 ? 'Primary' : i === 1 ? 'Secondary' : 'Fallback';
-
-    if (!enabled) {
-      continue;
+  // For PDFs, try pdf-parse as fallback
+  if (isPDF(mimeType)) {
+    try {
+      console.log(`[Extraction] Attempting pdf-parse for ${filename}...`);
+      const result = await extractWithPdfParse(buffer);
+      console.log(`[Extraction] pdf-parse succeeded: ${result.numPages} pages`);
+      return { ...result, provider: 'pdf-parse' };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      console.warn(`[Extraction] pdf-parse failed: ${msg}`);
+      errors.push(`pdf-parse: ${msg}`);
     }
-
-    const result = await attemptProvider(provider, tierLabel, buffer, mimeType, filename, errors);
-    if (result) return result;
   }
 
-  // All providers exhausted
+  // All extraction methods exhausted
   const errorDetails = errors.length > 0
     ? ` Attempted: ${errors.join('; ')}`
-    : ' No extraction service configured for this file type.';
+    : ' No extraction service available for this file type.';
 
   throw new Error(
     `Unable to extract text from "${filename}" (${mimeType}).${errorDetails}`
   );
 }
 
-/**
- * Attempt extraction with a specific provider
- * Returns result on success, null on failure or skip
- */
-async function attemptProvider(
-  provider: OcrProvider,
-  tierLabel: string,
-  buffer: Buffer,
-  mimeType: string,
-  filename: string,
-  errors: string[]
-): Promise<ExtractionResult | null> {
-  switch (provider) {
-    case 'mistral': {
-      // Check OCR settings first, then LLM provider config
-      const ocrSettings = await getOcrSettings();
-      const hasMistral = ocrSettings.mistralApiKey || await isProviderConfigured('mistral');
-      if (!isMistralSupported(mimeType) || !hasMistral) return null;
-      try {
-        console.log(`[${tierLabel}] Attempting Mistral OCR for ${filename}...`);
-        const result = await extractTextWithMistral(buffer, mimeType);
-        console.log(`[${tierLabel}] Mistral OCR succeeded: ${result.numPages} pages`);
-        return { ...result, provider: 'mistral' };
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : 'Unknown error';
-        console.warn(`[${tierLabel}] Mistral OCR failed: ${msg}`);
-        errors.push(`Mistral: ${msg}`);
-        return null;
-      }
-    }
-    case 'azure-di': {
-      // Check OCR settings first, then env vars
-      const azureOcrSettings = await getOcrSettings();
-      const hasAzureDI = (azureOcrSettings.azureDiEndpoint && azureOcrSettings.azureDiKey) ||
-                         (process.env.AZURE_DI_ENDPOINT && process.env.AZURE_DI_KEY);
-      if (!hasAzureDI) return null;
-      try {
-        console.log(`[${tierLabel}] Attempting Azure DI for ${filename}...`);
-        const result = await extractTextWithAzureDI(buffer, mimeType);
-        console.log(`[${tierLabel}] Azure DI succeeded: ${result.numPages} pages`);
-        return { ...result, provider: 'azure-di' };
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : 'Unknown error';
-        console.warn(`[${tierLabel}] Azure DI failed: ${msg}`);
-        errors.push(`Azure DI: ${msg}`);
-        return null;
-      }
-    }
-    case 'pdf-parse': {
-      if (!isPDF(mimeType)) return null;
-      try {
-        console.log(`[${tierLabel}] Attempting pdf-parse for ${filename}...`);
-        const result = await extractWithPdfParse(buffer);
-        console.log(`[${tierLabel}] pdf-parse succeeded: ${result.numPages} pages`);
-        return { ...result, provider: 'pdf-parse' };
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : 'Unknown error';
-        console.warn(`[${tierLabel}] pdf-parse failed: ${msg}`);
-        errors.push(`pdf-parse: ${msg}`);
-        return null;
-      }
-    }
-    default:
-      return null;
-  }
-}
+// Mistral OCR and Azure DI provider functions removed in reduced-local branch
+// Only local extraction methods are used
 
 // ============================================
 // pdf-parse Extraction

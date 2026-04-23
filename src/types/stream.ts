@@ -5,7 +5,7 @@
  * progressive disclosure UI state, and processing metadata.
  */
 
-import type { Source, GeneratedDocumentInfo, GeneratedImageInfo, MessageVisualization, DiagramHint, PodcastHint } from './index';
+import type { Source, GeneratedDocumentInfo, GeneratedImageInfo, MessageVisualization } from './index';
 import type { ComplianceDecision, HitlClarificationEvent, PreflightClarificationEvent } from './compliance';
 import type { FallbackReason, ModelSwitchEvent } from '@/lib/llm-fallback';
 
@@ -129,8 +129,6 @@ export type StreamEvent =
   | { type: 'artifact'; subtype: 'visualization'; data: MessageVisualization }
   | { type: 'artifact'; subtype: 'document'; data: GeneratedDocumentInfo }
   | { type: 'artifact'; subtype: 'image'; data: GeneratedImageInfo }
-  | { type: 'artifact'; subtype: 'diagram'; data: DiagramHint }
-  | { type: 'artifact'; subtype: 'podcast'; data: PodcastHint }
 
   // RAG sources
   | { type: 'sources'; data: Source[] }
@@ -331,7 +329,7 @@ export interface StreamingCallbacks {
   onThinkingChunk?: (text: string) => void;
   onToolStart?: (name: string, displayName: string) => void;
   onToolEnd?: (name: string, success: boolean, duration: number, error?: string) => void;
-  onArtifact?: (type: 'visualization' | 'document' | 'image' | 'diagram' | 'podcast', data: MessageVisualization | GeneratedDocumentInfo | GeneratedImageInfo | DiagramHint | PodcastHint) => void;
+  onArtifact?: (type: 'visualization' | 'document' | 'image', data: MessageVisualization | GeneratedDocumentInfo | GeneratedImageInfo) => void;
   /** Called when the LLM invokes request_clarification. Pauses the stream, shows HITL UI, resolves with user's answer or null. */
   onClarification?: (question: string, options: string[], allowFreeText: boolean) => Promise<string | null>;
 }

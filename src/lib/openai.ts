@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import { isThinkTagModel } from '@/lib/services/model-discovery';
-import type { Message, ToolCall, StreamingCallbacks, MessageVisualization, GeneratedDocumentInfo, GeneratedImageInfo, ImageContent, DiagramHint, PodcastHint } from '@/types';
+import type { Message, ToolCall, StreamingCallbacks, MessageVisualization, GeneratedDocumentInfo, GeneratedImageInfo, ImageContent } from '@/types';
 import type { ToolExecutionRecord, FailureType } from '@/types/compliance';
 import type { ImageCapabilities } from '@/lib/config-capability-checker';
 import { getLlmSettings, getEmbeddingSettings, getLimitsSettings, getEffectiveMaxTokens, isToolCapableModelFromDb } from './db/compat/config';
@@ -1340,17 +1340,6 @@ export async function generateResponseWithTools(
                   model: parsed.metadata?.model,
                 };
                 callbacks.onArtifact('image', img);
-              }
-              if (parsed.success && parsed.diagramHint) {
-                const diagram: DiagramHint = {
-                  code: parsed.diagramHint.code,
-                  type: parsed.diagramHint.type,
-                  title: parsed.diagramHint.title,
-                };
-                callbacks.onArtifact('diagram', diagram);
-              }
-              if (parsed.success && parsed.podcastHint) {
-                callbacks.onArtifact('podcast', parsed.podcastHint);
               }
             } catch (artifactError) {
               logger.error(`Artifact callback error for tool ${toolName}:`, artifactError);

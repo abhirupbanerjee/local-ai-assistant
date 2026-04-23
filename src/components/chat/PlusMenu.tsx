@@ -3,9 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Plus } from 'lucide-react';
 import FileUpload from './FileUpload';
-import ModeToggle, { ChatMode } from './ModeToggle';
 import WebSearchToggle from './WebSearchToggle';
-import LanguageSelector from './LanguageSelector';
 import ToneSelector from './ToneSelector';
 
 interface UrlSourceInfo {
@@ -15,20 +13,23 @@ interface UrlSourceInfo {
   title?: string;
 }
 
+// Chat mode type (local definition since ModeToggle was removed)
+type ChatMode = 'normal';
+
 interface PlusMenuProps {
   // FileUpload props
   threadId: string | null;
   currentUploads: string[];
   onUploadComplete: (filename: string) => void;
   onUrlSourceAdded?: (source: UrlSourceInfo) => void;
-  // ModeToggle props
+  // ModeToggle props (kept for compatibility but unused)
   mode: ChatMode;
   onModeChange: (mode: ChatMode) => void;
   autonomousAdminDisabled?: boolean;
   // WebSearchToggle props
   webSearchEnabled: boolean;
   onWebSearchToggle: (enabled: boolean) => void;
-  // LanguageSelector props
+  // LanguageSelector props (kept for compatibility but unused)
   selectedLanguage: string;
   onLanguageChange: (languageCode: string) => void;
   // ToneSelector props
@@ -73,9 +74,7 @@ export default function PlusMenu({
 
   // Count active features for badge
   const activeCount = [
-    mode === 'autonomous',
     webSearchEnabled,
-    selectedLanguage !== 'en',
     selectedTone !== 'default',
     currentUploads.length > 0,
   ].filter(Boolean).length;
@@ -114,15 +113,9 @@ export default function PlusMenu({
               onUrlSourceAdded={onUrlSourceAdded}
               disabled={disabled}
             />
-            <ModeToggle mode={mode} onModeChange={onModeChange} disabled={disabled} adminDisabled={autonomousAdminDisabled} />
             <WebSearchToggle
               enabled={webSearchEnabled}
               onToggle={onWebSearchToggle}
-              disabled={disabled}
-            />
-            <LanguageSelector
-              selectedLanguage={selectedLanguage}
-              onLanguageChange={onLanguageChange}
               disabled={disabled}
             />
             <ToneSelector

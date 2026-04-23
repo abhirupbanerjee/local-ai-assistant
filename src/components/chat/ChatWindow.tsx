@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { MessageSquare, RefreshCw, BookOpen, ChevronDown, ChevronUp, ArrowDown } from 'lucide-react';
-import type { Message, MessageMetadata, Thread, UserSubscription, Source, MessageVisualization, GeneratedDocumentInfo, GeneratedImageInfo, UrlSource, ChatPreferences, DiagramHint, PodcastHint } from '@/types';
+import type { Message, MessageMetadata, Thread, UserSubscription, Source, MessageVisualization, GeneratedDocumentInfo, GeneratedImageInfo, UrlSource, ChatPreferences } from '@/types';
 import { DEFAULT_CHAT_PREFERENCES } from '@/types/stream';
 import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
@@ -10,11 +10,8 @@ import Spinner from '@/components/ui/Spinner';
 import StarterButtons, { StarterPrompt } from './StarterButtons';
 import ProcessingIndicator from './ProcessingIndicator';
 
-import { useStreamingChat, AutonomousPlanState, AutonomousTaskState } from '@/hooks/useStreamingChat';
+import { useStreamingChat } from '@/hooks/useStreamingChat';
 import HitlClarificationCard from './HitlClarificationCard';
-import PlanApprovalCard from './PlanApprovalCard';
-import { useScrollHide } from '@/hooks/useScrollHide';
-import { useMobileMenuOptional } from '@/contexts/MobileMenuContext';
 
 interface WelcomeConfig {
   title?: string;
@@ -35,12 +32,8 @@ interface ChatWindowProps {
     uploads: string[];
     generatedDocs: GeneratedDocumentInfo[];
     generatedImages: GeneratedImageInfo[];
-    generatedPodcasts: PodcastHint[];
     urlSources: UrlSource[];
   }) => void;
-  // Callbacks for input focus (mobile sidebar hiding)
-  onInputFocus?: () => void;
-  onInputBlur?: () => void;
 }
 
 // Ref interface for external control
@@ -64,8 +57,6 @@ const ChatWindow = forwardRef<ChatWindowRef, ChatWindowProps>(function ChatWindo
   globalWelcome,
   categoryWelcome,
   onArtifactsChange,
-  onInputFocus,
-  onInputBlur,
 }, ref) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [uploads, setUploads] = useState<string[]>([]);
@@ -150,16 +141,6 @@ const ChatWindow = forwardRef<ChatWindowRef, ChatWindowProps>(function ChatWindo
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
-  // Mobile scroll-based hiding
-  const { isHidden: isScrollingDown, onScroll: onScrollHide } = useScrollHide();
-  const mobileMenu = useMobileMenuOptional();
-
-  // Sync scroll state to mobile menu context
-  useEffect(() => {
-    mobileMenu?.setScrollingDown(isScrollingDown);
-  }, [isScrollingDown, mobileMenu]);
-
-
   // Streaming chat hook
   const handleStreamComplete = useCallback((
     messageId: string,
@@ -168,8 +149,6 @@ const ChatWindow = forwardRef<ChatWindowRef, ChatWindowProps>(function ChatWindo
     visualizations: MessageVisualization[],
     documents: GeneratedDocumentInfo[],
     images: GeneratedImageInfo[],
-    _diagrams: DiagramHint[],
-    podcasts: PodcastHint[],
     metadata?: MessageMetadata,
     thinkingContent?: string
   ) => {
@@ -181,8 +160,6 @@ const ChatWindow = forwardRef<ChatWindowRef, ChatWindowProps>(function ChatWindo
       visualizations: visualizations.length > 0 ? visualizations : undefined,
       generatedDocuments: documents.length > 0 ? documents : undefined,
       generatedImages: images.length > 0 ? images : undefined,
-      generatedDiagrams: _diagrams.length > 0 ? _diagrams : undefined,
-      generatedPodcasts: podcasts.length > 0 ? podcasts : undefined,
       timestamp: new Date(),
       metadata,
       thinkingContent,
@@ -218,16 +195,14 @@ const ChatWindow = forwardRef<ChatWindowRef, ChatWindowProps>(function ChatWindo
   // Determine if we're in autonomous mode
   const isAutonomousMode = Boolean(streamingState.autonomousPlan);
 
-  // Compute generated docs, images, and podcasts from all messages + streaming state
-  const { generatedDocs, generatedImages, generatedPodcasts } = useMemo(() => {
+  // Compute generated docs and images from all messages + streaming state
+  const { generatedDocs, generatedImages } = useMemo(() => {
     const docs: GeneratedDocumentInfo[] = [];
     const images: GeneratedImageInfo[] = [];
-    const podcasts: PodcastHint[] = [];
     // Include artifacts from saved messages
     for (const msg of messages) {
       if (msg.generatedDocuments) docs.push(...msg.generatedDocuments);
       if (msg.generatedImages) images.push(...msg.generatedImages);
-      if (msg.generatedPodcasts) podcasts.push(...msg.generatedPodcasts);
     }
     // Include real-time streaming artifacts (for sidebar updates during generation)
     if (streamingState.documents) {
@@ -245,15 +220,8 @@ const ChatWindow = forwardRef<ChatWindowRef, ChatWindowProps>(function ChatWindo
         }
       }
     }
-    if (streamingState.podcasts) {
-      for (const podcast of streamingState.podcasts) {
-        if (!podcasts.some(p => p.id === podcast.id)) {
-          podcasts.push(podcast);
-        }
-      }
-    }
-    return { generatedDocs: docs, generatedImages: images, generatedPodcasts: podcasts };
-  }, [messages, streamingState.documents, streamingState.images, streamingState.podcasts]);
+    return { generatedDocs: docs, generatedImages: images };
+  }, [messages, streamingState.documents, streamingState.images]);
 
   // Notify parent of artifacts changes
   useEffect(() => {
@@ -262,10 +230,9 @@ const ChatWindow = forwardRef<ChatWindowRef, ChatWindowProps>(function ChatWindo
       uploads,
       generatedDocs,
       generatedImages,
-      generatedPodcasts,
       urlSources,
     });
-  }, [threadId, uploads, generatedDocs, generatedImages, generatedPodcasts, urlSources, onArtifactsChange]);
+  }, [threadId, uploads, generatedDocs, generatedImages, urlSources, onArtifactsChange]);
 
   // Fetch autonomous mode admin setting on mount
   useEffect(() => {
@@ -399,14 +366,12 @@ const ChatWindow = forwardRef<ChatWindowRef, ChatWindowProps>(function ChatWindo
     }
   }, [messages, streamingState.currentContent, isScrolledUp, streamingState.isStreaming, streamingState.planApprovalEvent, streamingState.preflightEvent]);
 
-  const handleMessagesScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+  const handleMessagesScroll = useCallback(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
     const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
     setIsScrolledUp(!atBottom);
-    // Also update mobile scroll-hide state
-    onScrollHide(e);
-  }, [onScrollHide]);
+  }, []);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -645,53 +610,6 @@ const ChatWindow = forwardRef<ChatWindowRef, ChatWindowProps>(function ChatWindo
           />
         )}
 
-        {/* Plan Approval Card (autonomous mode HITL) */}
-        {streamingState.planApprovalEvent && (
-          <PlanApprovalCard
-            event={streamingState.planApprovalEvent}
-            onApprove={async (feedback) => {
-              const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 10000);
-              try {
-                const res = await fetch(`/api/autonomous/${streamingState.planApprovalEvent!.planId}/approve`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ approved: true, feedback }),
-                  signal: controller.signal,
-                });
-                clearTimeout(timeoutId);
-                if (!res.ok) throw new Error(`Server error: ${res.status}`);
-              } catch (e) {
-                clearTimeout(timeoutId);
-                console.error('[PlanApproval] Approve error:', e);
-                setError(e instanceof Error && e.name === 'AbortError'
-                  ? 'Approval submission timed out.'
-                  : 'Failed to submit plan approval.');
-              }
-            }}
-            onReject={async () => {
-              const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 10000);
-              try {
-                const res = await fetch(`/api/autonomous/${streamingState.planApprovalEvent!.planId}/approve`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ approved: false }),
-                  signal: controller.signal,
-                });
-                clearTimeout(timeoutId);
-                if (!res.ok) throw new Error(`Server error: ${res.status}`);
-              } catch (e) {
-                clearTimeout(timeoutId);
-                console.error('[PlanApproval] Reject error:', e);
-                setError(e instanceof Error && e.name === 'AbortError'
-                  ? 'Rejection submission timed out.'
-                  : 'Failed to submit plan rejection.');
-              }
-            }}
-          />
-        )}
-
         {/* Pre-flight HITL Clarification Card */}
         {streamingState.preflightEvent && (
           <HitlClarificationCard
@@ -884,8 +802,6 @@ const ChatWindow = forwardRef<ChatWindowRef, ChatWindowProps>(function ChatWindo
         preferences={chatPreferences}
         onPreferencesChange={setChatPreferences}
         autonomousAdminDisabled={autonomousAdminDisabled}
-        onFocus={onInputFocus}
-        onBlur={onInputBlur}
       />
 
     </div>

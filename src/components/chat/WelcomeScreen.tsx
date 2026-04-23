@@ -41,13 +41,14 @@ import {
   Github,
   Search,
 } from 'lucide-react';
+import type { Thread } from '@/types';
 
 // ============ Interfaces ============
 
 interface WelcomeScreenProps {
   userRole: 'user' | 'superuser' | 'admin';
   brandingName: string;
-  onNewThread?: () => void;
+  onNewThread?: (thread: Thread) => void;
 }
 
 interface ServiceCard {

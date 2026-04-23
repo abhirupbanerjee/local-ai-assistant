@@ -8,9 +8,7 @@ import type { Message, MessageMetadata } from '@/types';
 import SourceCard from './SourceCard';
 import DocumentResultCard from './DocumentResultCard';
 import ImageDisplay from './ImageDisplay';
-import PodcastPlayer from './PodcastPlayer';
 import DataVisualization from './DataVisualization';
-import MermaidDiagram from '@/components/markdown/MermaidDiagram';
 import { MarkdownComponents } from '@/components/markdown/MarkdownRenderers';
 import MessageActions from './MessageActions';
 
@@ -165,15 +163,6 @@ export default function MessageBubble({ message, isStreaming = false, onRegenera
           </div>
         )}
 
-        {/* Generated Podcasts */}
-        {message.generatedPodcasts && message.generatedPodcasts.length > 0 && (
-          <div className="mt-4 space-y-4">
-            {message.generatedPodcasts.map((podcast) => (
-              <PodcastPlayer key={podcast.id} podcast={podcast} />
-            ))}
-          </div>
-        )}
-
         {/* Data Visualizations */}
         {message.visualizations && message.visualizations.length > 0 && (
           <div className="mt-4 space-y-4">
@@ -193,22 +182,6 @@ export default function MessageBubble({ message, isStreaming = false, onRegenera
                 notes={viz.notes}
                 seriesMode={viz.seriesMode}
               />
-            ))}
-          </div>
-        )}
-
-        {/* Generated Diagrams */}
-        {message.generatedDiagrams && message.generatedDiagrams.length > 0 && (
-          <div className="mt-4 space-y-4">
-            {message.generatedDiagrams.map((diagram, index) => (
-              <div key={index} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                {diagram.title && (
-                  <div className="px-3 py-2 border-b border-gray-100 bg-gray-50">
-                    <span className="text-sm font-medium text-gray-700">{diagram.title}</span>
-                  </div>
-                )}
-                <MermaidDiagram code={diagram.code} />
-              </div>
             ))}
           </div>
         )}
