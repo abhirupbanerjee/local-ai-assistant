@@ -384,7 +384,6 @@ export async function getMessageById(messageId: string): Promise<ParsedMessage |
       'visualizations_json',
       'generated_images_json',
       'generated_diagrams_json',
-      'generated_podcasts_json',
       'metadata_json',
       'created_at',
     ])
@@ -413,7 +412,6 @@ export async function getMessagesForThread(threadId: string): Promise<ParsedMess
       'visualizations_json',
       'generated_images_json',
       'generated_diagrams_json',
-      'generated_podcasts_json',
       'metadata_json',
       'created_at',
     ])

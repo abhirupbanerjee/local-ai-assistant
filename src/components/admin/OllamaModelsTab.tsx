@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Bot, Download, Trash2, RefreshCw, CheckCircle, XCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Bot, Download, Trash2, RefreshCw, CheckCircle, XCircle, AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
 
@@ -25,6 +25,17 @@ interface OllamaStatus {
   error?: string;
 }
 
+interface PullJob {
+  model: string;
+  status: 'pending' | 'pulling' | 'success' | 'error';
+  progress: number;
+  totalSize: number;
+  downloadedSize: number;
+  error?: string;
+  startedAt: string;
+  updatedAt: string;
+}
+
 export default function OllamaModelsTab() {
   const [models, setModels] = useState<OllamaModel[]>([]);
   const [status, setStatus] = useState<OllamaStatus | null>(null);
@@ -33,6 +44,15 @@ export default function OllamaModelsTab() {
   const [pullModelName, setPullModelName] = useState('');
   const [pullError, setPullError] = useState<string | null>(null);
   const [pullSuccess, setPullSuccess] = useState<string | null>(null);
+  const [activeJobs, setActiveJobs] = useState<PullJob[]>([]);
+  const [syncStatus, setSyncStatus] = useState<{ synced: string[]; unsynced: string[] } | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [routesSettings, setRoutesSettings] = useState<{ route3Enabled: boolean } | null>(null);
+  const [enablingRoute3, setEnablingRoute3] = useState(false);
+  
+  // Use refs to track polling
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const previousJobsRef = useRef<PullJob[]>([]);
 
   const loadModels = useCallback(async () => {
     setLoading(true);
@@ -53,9 +73,133 @@ export default function OllamaModelsTab() {
     }
   }, []);
 
+  // Check which models are synced to the database
+  const checkSyncStatus = useCallback(async () => {
+    try {
+      const response = await fetch('/api/ollama/sync');
+      if (response.ok) {
+        const data = await response.json();
+        setSyncStatus({ synced: data.synced || [], unsynced: data.unsynced || [] });
+      }
+    } catch (err) {
+      console.error('Failed to check sync status:', err);
+    }
+  }, []);
+
+  // Check routes settings
+  const checkRoutesSettings = useCallback(async () => {
+    try {
+      const response = await fetch('/api/admin/routes');
+      if (response.ok) {
+        const data = await response.json();
+        setRoutesSettings(data.settings);
+      }
+    } catch (err) {
+      console.error('Failed to check routes settings:', err);
+    }
+  }, []);
+
+  // Enable Route 3 for Ollama models
+  const enableRoute3 = async () => {
+    setEnablingRoute3(true);
+    try {
+      const response = await fetch('/api/admin/routes', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ route3Enabled: true }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setRoutesSettings(data.settings);
+        setPullSuccess('Route 3 (Ollama) enabled! Models will now appear in chat.');
+      } else {
+        setPullError('Failed to enable Route 3');
+      }
+    } catch (err) {
+      setPullError('Failed to enable Route 3');
+    } finally {
+      setEnablingRoute3(false);
+    }
+  };
+
+  // Poll for active pull jobs
+  const pollPullStatus = useCallback(async () => {
+    try {
+      const response = await fetch('/api/ollama/pull/status');
+      if (response.ok) {
+        const data = await response.json();
+        const jobs: PullJob[] = data.jobs || [];
+        
+        // Check if any previously active job is now gone (completed)
+        const previousJobs = previousJobsRef.current;
+        const wasPulling = previousJobs.length > 0;
+        const isNowIdle = jobs.length === 0;
+        
+        // If we were pulling and now we're idle, a job finished
+        if (wasPulling && isNowIdle) {
+          console.log('[Ollama] Pull completed, refreshing models...');
+          await loadModels();
+          await checkSyncStatus();
+        }
+        
+        // Also check for successful jobs still in the list
+        const completedJobs = jobs.filter(job => job.status === 'success');
+        if (completedJobs.length > 0) {
+          await loadModels();
+          await checkSyncStatus();
+        }
+        
+        setActiveJobs(jobs);
+        previousJobsRef.current = jobs;
+      }
+    } catch (err) {
+      console.error('Failed to poll pull status:', err);
+    }
+  }, [loadModels, checkSyncStatus]);
+
+  // Initial load
   useEffect(() => {
     loadModels();
-  }, [loadModels]);
+    checkSyncStatus();
+    checkRoutesSettings();
+  }, []);
+
+  // Sync Ollama models to the database (makes them available in chat)
+  const handleSyncModels = async () => {
+    setSyncing(true);
+    try {
+      const response = await fetch('/api/ollama/sync', { method: 'POST' });
+      const data = await response.json();
+      
+      if (response.ok) {
+        setPullSuccess(`Synced ${data.synced?.length || 0} models to chat. ${data.enabled?.length || 0} re-enabled.`);
+        // Refresh sync status
+        await checkSyncStatus();
+      } else {
+        setPullError(data.error || 'Failed to sync models');
+      }
+    } catch (err) {
+      setPullError('Failed to sync models to chat');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  // Setup polling for pull status every 10 seconds
+  useEffect(() => {
+    // Poll immediately
+    pollPullStatus();
+    
+    // Setup interval
+    pollIntervalRef.current = setInterval(pollPullStatus, 10000);
+    
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, [pollPullStatus]);
 
   const handlePullModel = async () => {
     if (!pullModelName.trim()) return;
@@ -76,10 +220,14 @@ export default function OllamaModelsTab() {
       if (!response.ok) {
         setPullError(data.error || 'Failed to pull model');
       } else {
-        setPullSuccess(`Successfully pulled ${pullModelName}`);
+        if (data.message === 'Pull already in progress') {
+          setPullSuccess(`Pull for ${pullModelName} is already in progress (${data.progress}%)`);
+        } else {
+          setPullSuccess(`Started pulling ${pullModelName} in background`);
+        }
         setPullModelName('');
-        // Reload models after pull
-        await loadModels();
+        // Immediately poll for status
+        pollPullStatus();
       }
     } catch (err) {
       setPullError('Failed to pull model');
@@ -93,6 +241,14 @@ export default function OllamaModelsTab() {
       return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     }
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
   };
 
   return (
@@ -134,7 +290,112 @@ export default function OllamaModelsTab() {
             <RefreshCw className="w-4 h-4" />
           </button>
         </div>
+        
+        {/* Sync Status */}
+        {syncStatus && syncStatus.unsynced.length > 0 && (
+          <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-yellow-600" />
+                <span className="text-sm text-yellow-800">
+                  {syncStatus.unsynced.length} model{syncStatus.unsynced.length !== 1 ? 's' : ''} not available in chat
+                </span>
+              </div>
+              <Button
+                onClick={handleSyncModels}
+                disabled={syncing}
+                size="sm"
+                className="flex items-center gap-1"
+              >
+                {syncing ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3 h-3" />
+                )}
+                Sync to Chat
+              </Button>
+            </div>
+          </div>
+        )}
+        
+        {syncStatus && syncStatus.unsynced.length === 0 && syncStatus.synced.length > 0 && (
+          <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-green-600" />
+            <span className="text-sm text-green-800">
+              All {syncStatus.synced.length} model{syncStatus.synced.length !== 1 ? 's' : ''} available in chat
+            </span>
+          </div>
+        )}
+        
+        {/* Route 3 Warning */}
+        {routesSettings && !routesSettings.route3Enabled && syncStatus && (syncStatus.synced.length > 0 || syncStatus.unsynced.length > 0) && (
+          <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-orange-600" />
+                <span className="text-sm text-orange-800">
+                  Route 3 (Ollama) is disabled. Models won't appear in chat.
+                </span>
+              </div>
+              <Button
+                onClick={enableRoute3}
+                disabled={enablingRoute3}
+                size="sm"
+                className="flex items-center gap-1"
+              >
+                {enablingRoute3 ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <CheckCircle className="w-3 h-3" />
+                )}
+                Enable Route 3
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Active Pull Jobs */}
+      {activeJobs.length > 0 && (
+        <div className="bg-white rounded-lg border shadow-sm p-6">
+          <h3 className="text-md font-semibold text-gray-900 mb-4">Active Downloads</h3>
+          <div className="space-y-4">
+            {activeJobs.map((job) => (
+              <div key={job.model} className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+                    <span className="font-medium text-gray-900">{job.model}</span>
+                    <span className="text-xs text-gray-500">
+                      {job.status === 'pending' ? 'Starting...' : 'Downloading...'}
+                    </span>
+                  </div>
+                  <span className="text-sm font-semibold text-blue-600">
+                    {job.progress}%
+                  </span>
+                </div>
+                
+                {/* Progress Bar */}
+                <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
+                  <div
+                    className="bg-blue-600 h-2.5 rounded-full transition-all duration-500"
+                    style={{ width: `${job.progress}%` }}
+                  ></div>
+                </div>
+                
+                {/* Download Stats */}
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>{formatBytes(job.downloadedSize)} / {formatBytes(job.totalSize)}</span>
+                  <span>Updated: {new Date(job.updatedAt).toLocaleTimeString()}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-gray-400">
+            Auto-refreshing every 10 seconds...
+          </p>
+        </div>
+      )}
 
       {/* Pull New Model */}
       <div className="bg-white rounded-lg border shadow-sm p-6">

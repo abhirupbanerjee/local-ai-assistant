@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
 import { getApiBase } from '@/lib/provider-helpers';
+import {
+  startPullJob,
+  getPullJobForModel,
+  executeBackgroundPull,
+} from '@/lib/ollama-pull-jobs';
 
 /**
  * POST /api/ollama/pull
  * 
- * Pull a model from Ollama library
+ * Start a background model pull
  * Body: { model: "gemma3:latest" }
  * 
- * Returns streaming progress updates
+ * Returns immediately with jobId, pull continues in background
  */
 export async function POST(req: NextRequest) {
   try {
@@ -29,54 +34,40 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Ollama not configured' }, { status: 500 });
     }
 
-    // Call Ollama pull API with streaming
-    const response = await fetch(`${ollamaBase}/api/pull`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: model, stream: true }),
+    // Check if there's already an active pull for this model
+    const existingJob = getPullJobForModel(model);
+    if (existingJob && (existingJob.status === 'pending' || existingJob.status === 'pulling')) {
+      return NextResponse.json({
+        success: true,
+        jobId: existingJob.model, // Return model name as identifier
+        model,
+        status: existingJob.status,
+        progress: existingJob.progress,
+        message: 'Pull already in progress',
+      });
+    }
+
+    // Start new pull job
+    const jobId = startPullJob(model);
+
+    // Execute pull in background (don't await)
+    executeBackgroundPull(jobId, model, ollamaBase).catch(err => {
+      console.error(`[Ollama Pull] Background pull failed for ${model}:`, err);
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      return NextResponse.json(
-        { error: `Ollama pull error: ${response.status} - ${errorText}` },
-        { status: response.status }
-      );
-    }
-
-    // Read the full response (Ollama returns JSON lines for streaming)
-    const text = await response.text();
-    
-    // Parse the final status from the stream response
-    // Ollama returns multiple JSON objects, the last one has status: "success"
-    const lines = text.trim().split('\n');
-    let lastStatus = '';
-    let totalSize = 0;
-    
-    for (const line of lines) {
-      try {
-        const parsed = JSON.parse(line);
-        if (parsed.status) {
-          lastStatus = parsed.status;
-        }
-        if (parsed.total) {
-          totalSize = parsed.total;
-        }
-      } catch {
-        // Skip invalid JSON lines
-      }
-    }
-
+    // Return immediately with job info
     return NextResponse.json({
-      success: lastStatus === 'success',
+      success: true,
+      jobId,
       model,
-      status: lastStatus,
-      totalSize,
+      status: 'pulling',
+      progress: 0,
+      message: 'Pull started in background',
     });
   } catch (error) {
-    console.error('[Ollama Pull] Failed to pull model:', error);
+    console.error('[Ollama Pull] Failed to start pull:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to pull model' },
+      { error: error instanceof Error ? error.message : 'Failed to start pull' },
       { status: 500 }
     );
   }

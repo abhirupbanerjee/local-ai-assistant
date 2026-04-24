@@ -9,11 +9,26 @@ import { verifyPassword } from './password';
 // Trigger user initialization at module load time
 // This ensures admin users are created before auth routes are accessed
 (async () => {
-  try {
-    await initializeAdminsFromEnv();
-    await initializeAdminCredentialsFromEnv();
-  } catch (err) {
-    console.error('[Auth] Failed to initialize users:', err);
+  // Retry logic to handle database not being ready at startup
+  const maxRetries = 5;
+  const retryDelay = 2000; // 2 seconds
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await initializeAdminsFromEnv();
+      await initializeAdminCredentialsFromEnv();
+      console.log('[Auth] Admin users initialized successfully');
+      return; // Success - exit the retry loop
+    } catch (err) {
+      console.error(`[Auth] Failed to initialize users (attempt ${attempt}/${maxRetries}):`, err);
+      
+      if (attempt < maxRetries) {
+        console.log(`[Auth] Retrying in ${retryDelay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      } else {
+        console.error('[Auth] Max retries reached. Admin users may not be initialized.');
+      }
+    }
   }
 })();
 

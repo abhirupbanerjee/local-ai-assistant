@@ -490,7 +490,7 @@ function getHardcodedDefaults(): AppConfig {
       archiveOriginalMessages: true,
     },
     branding: {
-      botName: 'Policy Bot',
+      botName: 'Local AI Assistant',
       botIcon: 'policy',
     },
     limits: {

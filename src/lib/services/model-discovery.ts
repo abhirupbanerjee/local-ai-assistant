@@ -54,7 +54,7 @@ export interface DiscoveredModel {
   visionCapable: boolean;
   maxInputTokens: number | null;
   maxOutputTokens: number;  // Provider-based default or API value
-  isEnabled: boolean;     // Already enabled in Policy Bot
+  isEnabled: boolean;     // Already enabled in Local AI Assistant
 }
 
 export interface DiscoveryResult {

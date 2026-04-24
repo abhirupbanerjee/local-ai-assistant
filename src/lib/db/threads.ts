@@ -36,7 +36,6 @@ export interface DbMessage {
   visualizations_json: string | null;
   generated_images_json: string | null;
   generated_diagrams_json: string | null;
-  generated_podcasts_json: string | null;
   metadata_json: string | null;
   created_at: string;
 }

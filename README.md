@@ -115,13 +115,32 @@ local-ai-assistant/
 ## Quick Start
 
 ### Development
-```bash
-cp .env.example .env.local
-# Configure OLLAMA_API_BASE, ADMIN_EMAILS, DATABASE_URL
 
-# PostgreSQL + Qdrant + Redis
-docker compose -f docker-compose.local.yml up -d
+**Important:** Start infrastructure services **before** the app to ensure the database is ready when the app initializes.
+
+```bash
+# Copy environment template
+cp .env.example .env.local
+
+# 1. Start infrastructure services first (PostgreSQL, Qdrant, Redis, Ollama)
+docker compose -f docker-compose.local.yml --profile ollama up -d
+
+# 2. Wait for PostgreSQL to be ready (10 seconds recommended)
+sleep 10
+
+# 3. Install dependencies and start the app
 npm install && npm run dev
+```
+
+**Note:** The app automatically creates admin users from `ADMIN_EMAILS` in `.env.local` on first startup. If the database isn't ready, this may fail. The app now includes retry logic, but waiting ensures a smooth first run.
+
+### Stopping Services
+```bash
+# Stop all services (preserves data)
+docker compose -f docker-compose.local.yml down
+
+# Stop and remove data volumes (clean start)
+docker compose -f docker-compose.local.yml down -v
 ```
 
 ### Production

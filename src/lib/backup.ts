@@ -557,7 +557,7 @@ export async function createBackup(
     createdAt: new Date().toISOString(),
     createdBy: userEmail,
     application: {
-      name: 'Policy Bot',
+      name: 'Local AI Assistant',
       version: '1.0.0',
     },
     contents: {

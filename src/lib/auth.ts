@@ -19,9 +19,13 @@ export async function canAccessAdminDashboard(email: string | null | undefined):
 
 export async function getCurrentUser(): Promise<User | null> {
   if (AUTH_DISABLED) {
+    // Use the first admin email from ADMIN_EMAILS env var, fallback to dev@localhost
+    const adminEmails = process.env.ADMIN_EMAILS?.split(',').map(e => e.trim()).filter(Boolean) || [];
+    const email = adminEmails[0] || 'dev@localhost';
+    
     return {
-      id: 'dev-user',
-      email: 'dev@localhost',
+      id: email,
+      email: email,
       name: 'Development User',
       isAdmin: true,
       role: 'admin',
