@@ -160,26 +160,46 @@ sudo apt-mark hold docker-ce docker-ce-cli containerd.io
 ### 1. Clone the Repository
 
 ```bash
-cd /opt
-sudo git clone https://github.com/your-org/local-ai-assistant.git
-sudo chown -R $USER:$USER local-ai-assistant
+# Clone to home directory
+cd ~
+git clone https://github.com/abhirupbanerjee/local-ai-assistant.git
 cd local-ai-assistant
 ```
 
-### 2. Run Initial Setup Script
+### 2. Run Setup Script
 
-**Important:** Run the setup script to create data directories with correct permissions:
+The `setup.sh` script automates the entire deployment process:
 
 ```bash
+# Make executable (if needed)
+chmod +x setup.sh
+
+# Run full setup
 ./setup.sh
 ```
 
-This script:
-- Creates `./data/app` directory
-- Creates `./data/transformers_cache` directory with proper permissions
-- Sets permissions for local embedding/reranker model caching
+**What the setup script does:**
+1. Creates data directories with correct permissions
+2. Copies `.env.azure` → `.env` (or uses existing `.env`)
+3. Generates secrets (NEXTAUTH_SECRET, POSTGRES_PASSWORD, DATA_SOURCE_ENCRYPTION_KEY)
+4. Verifies DNS for your domain
+5. Builds and starts Docker containers (PostgreSQL, Qdrant, Ollama)
+6. Waits for all services to be healthy
+7. Pre-downloads HuggingFace embedding model (bge-m3)
+8. Displays status and next steps
 
-> **Note:** The Docker entrypoint also handles permissions automatically, but running setup.sh ensures everything is ready before first start.
+### Setup Script Commands
+
+| Command | Description |
+|---------|-------------|
+| `./setup.sh` | Full setup (build + start + model download) |
+| `./setup.sh down` | Stop all containers |
+| `./setup.sh restart` | Quick restart without rebuild |
+| `./setup.sh start` | Fresh start (down + up -d, no rebuild) |
+| `./setup.sh build` | Rebuild with --no-cache + start |
+| `./setup.sh --skip-docker` | Skip Docker build/start (just create .env) |
+| `./setup.sh --skip-models` | Skip HuggingFace model download |
+| `./setup.sh --help` | Show help message |
 
 ---
 

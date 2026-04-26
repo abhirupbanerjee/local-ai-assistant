@@ -218,155 +218,94 @@ sudo sysctl -p
 ### Clone Repository
 
 ```bash
-# Create directory
-sudo mkdir -p /opt/laap
-sudo chown $USER:$USER /opt/laap
-
-# Clone repository
-cd /opt/laap
-git clone https://github.com/your-org/local-ai-assistant.git .
+# Clone to home directory
+cd ~
+git clone https://github.com/abhirupbanerjee/local-ai-assistant.git
+cd local-ai-assistant
 ```
 
-### Create Environment File
+### Run Setup Script
+
+The `setup.sh` script automates the entire deployment process:
+
+```bash
+# Make executable (if needed)
+chmod +x setup.sh
+
+# Run full setup (creates .env, generates secrets, builds containers, downloads models)
+./setup.sh
+```
+
+**What the setup script does:**
+1. Creates data directories with correct permissions
+2. Copies `.env.azure` → `.env` 
+3. Generates secrets (NEXTAUTH_SECRET, POSTGRES_PASSWORD, DATA_SOURCE_ENCRYPTION_KEY)
+4. Verifies DNS for your domain
+5. Builds and starts Docker containers (PostgreSQL, Qdrant, Ollama)
+6. Waits for all services to be healthy
+7. Pre-downloads HuggingFace embedding model (bge-m3)
+8. Displays status and next steps
+
+### Setup Script Commands
+
+| Command | Description |
+|---------|-------------|
+| `./setup.sh` | Full setup (build + start + model download) |
+| `./setup.sh down` | Stop all containers |
+| `./setup.sh restart` | Quick restart without rebuild |
+| `./setup.sh start` | Fresh start (down + up -d, no rebuild) |
+| `./setup.sh build` | Rebuild with --no-cache + start |
+| `./setup.sh --help` | Show help message |
+
+### Manual Configuration (Optional)
+
+If you prefer manual setup or need to customize:
 
 ```bash
 # Copy production template
-cp .env.azure.example .env
+cp .env.azure .env
 
 # Edit configuration
 nano .env
 ```
 
-**Required Configuration:**
+**Key Configuration in `.env.azure`:**
 
-```env
-# =============================================================================
-# Core Configuration
-# =============================================================================
-
-# Admin emails (comma-separated)
-ADMIN_EMAILS=admin@yourdomain.com
-
-# NextAuth secret (generate with: openssl rand -base64 32)
-NEXTAUTH_SECRET=your-generated-32-char-secret-here
-
-# Public URL
-NEXTAUTH_URL=https://laap.yourdomain.com
-
-# =============================================================================
-# LLM Configuration (Ollama)
-# =============================================================================
-
-OLLAMA_MODE=docker
-OLLAMA_API_BASE=http://ollama:11434
-DEFAULT_OLLAMA_MODEL=qwen3:1.7b
-OLLAMA_MODEL=qwen3:1.7b
-OLLAMA_PULL_MODELS=qwen3:1.7b,qwen3.5:0.8b
-
-# Local embeddings for RAG (in-process, no Ollama needed)
-EMBEDDING_MODEL=bge-m3
-EMBEDDING_DIMENSIONS=1024
-
-# =============================================================================
-# Database Configuration
-# =============================================================================
-
-DATABASE_PROVIDER=postgres
-POSTGRES_USER=laap
-POSTGRES_PASSWORD=your-strong-password-here
-POSTGRES_DB=laap
-DATABASE_URL=postgresql://laap:your-strong-password-here@postgres:5432/laap
-
-# =============================================================================
-# Vector Store
-# =============================================================================
-
-QDRANT_HOST=qdrant
-QDRANT_PORT=6333
-
-# =============================================================================
-# Redis
-# =============================================================================
-
-REDIS_URL=redis://redis:6379
-
-# =============================================================================
-# Domain & TLS
-# =============================================================================
-
-DOMAIN=laap.yourdomain.com
-ACME_EMAIL=admin@yourdomain.com
-
-# =============================================================================
-# Storage
-# =============================================================================
-
-DATA_DIR=/app/data
-MAX_UPLOAD_SIZE=500mb
-
-# =============================================================================
-# Authentication (choose one or more)
-# =============================================================================
-
-# Option 1: Email/Password
-CREDENTIALS_ADMIN_PASSWORD=your-admin-password
-
-# Option 2: Azure AD
-AZURE_AD_CLIENT_ID=your-azure-client-id
-AZURE_AD_CLIENT_SECRET=your-azure-client-secret
-AZURE_AD_TENANT_ID=your-azure-tenant-id
-
-# Option 3: Google OAuth
-GOOGLE_CLIENT_ID=your-google-client-id
-GOOGLE_CLIENT_SECRET=your-google-client-secret
-
-# Access control
-ACCESS_MODE=allowlist
-AUTH_DISABLED=false
-```
-
-### Generate Secrets
-
-```bash
-# Generate NEXTAUTH_SECRET
-openssl rand -base64 32
-
-# Generate DATA_SOURCE_ENCRYPTION_KEY
-openssl rand -hex 32
-```
+| Variable | Value | Notes |
+|----------|-------|-------|
+| `DOMAIN` | `laap.abhirup.app` | Your domain |
+| `NEXTAUTH_URL` | `https://laap.abhirup.app` | Full URL |
+| `ADMIN_EMAILS` | `admin@yourdomain.com` | Admin users |
+| `ACME_EMAIL` | `admin@yourdomain.com` | Let's Encrypt email |
+| `CREDENTIALS_ADMIN_PASSWORD` | `CHANGE_ME_ON_FIRST_LOGIN` | Initial admin password |
+| `HF_TOKEN` | (your token) | HuggingFace token for gated models |
 
 ---
 
-## Step 6: Start Services
+## Step 6: Verify Deployment
 
-### Start All Services
-
-```bash
-cd /opt/laap
-
-# Start with all profiles (PostgreSQL, Qdrant, Ollama)
-docker compose --profile postgres --profile qdrant --profile ollama up -d --build
-```
-
-On first start, Ollama downloads the chat, embedding, and reranker models from
-`OLLAMA_PULL_MODELS`. Keep the terminal open on `docker compose logs -f ollama`
-until `qwen3:1.7b`, `qwen3-embedding:0.6b`, and `bbjson/bge-reranker-base`
-show as complete.
-
-### Verify Services
+### Check Service Status
 
 ```bash
 # Check all containers
 docker compose ps
 
-# Check logs
-docker compose logs -f
+# All services should show "healthy" status
+```
 
-# Verify specific services
+### Verify Services Individually
+
+```bash
+# PostgreSQL
 docker exec local-ai-assistant-postgres pg_isready -U laap
+
+# Redis
 docker exec local-ai-assistant-redis redis-cli ping
+
+# Ollama
 docker exec local-ai-assistant-ollama ollama list
-docker exec local-ai-assistant-ollama curl -s http://localhost:11434/api/version
+
+# Qdrant
 docker exec local-ai-assistant-qdrant wget -qO- http://localhost:6333/readyz
 ```
 
@@ -374,9 +313,18 @@ docker exec local-ai-assistant-qdrant wget -qO- http://localhost:6333/readyz
 
 ```bash
 # Check Traefik logs for certificate issuance
-docker compose logs -f traefik
+docker compose logs -f traefik | grep certificate
 
 # Look for: "ACME: certificate obtained"
+```
+
+### Check Application Health
+
+```bash
+# Check app health endpoint
+curl -I https://laap.abhirup.app/api/health
+
+# Should return 200 OK
 ```
 
 ---
