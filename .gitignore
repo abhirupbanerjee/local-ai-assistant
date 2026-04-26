@@ -48,6 +48,7 @@ data/qdrant/
 data/transformers_cache/
 data/global-docs/*
 data/backups/*
+data/backups/policybot_backup_20260424_191529.sql:2281
 
 # Keep data directory structure
 !data/.gitkeep
