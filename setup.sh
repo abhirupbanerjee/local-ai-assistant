@@ -490,8 +490,8 @@ else
     fi
     
     # Create a temporary container to download models
-    log_info "Downloading embedding model (bge-m3, ~2.2GB)..."
-    log_info "Downloading reranker model (bge-reranker-v2-m3, ~670MB)..."
+    log_info "Downloading embedding model (bge-base-en-v1.5, ~438MB)..."
+    log_info "Downloading reranker model (bge-reranker-base, ~1.3GB)..."
     
     # Use Python container to download models via transformers
     docker run --rm \
@@ -503,9 +503,9 @@ else
         -c "pip install -q transformers sentence-transformers && \
             python3 -c \"
 from sentence_transformers import SentenceTransformer
-print('Downloading bge-m3 embedding model...')
-model = SentenceTransformer('BAAI/bge-m3')
-print('bge-m3 downloaded successfully')
+print('Downloading bge-base-en-v1.5 embedding model...')
+model = SentenceTransformer('BAAI/bge-base-en-v1.5')
+print('bge-base-en-v1.5 downloaded successfully')
 \" 2>/dev/null || echo 'Embedding model download skipped (will download on first use)'"
     
     log_success "HuggingFace models cached"
