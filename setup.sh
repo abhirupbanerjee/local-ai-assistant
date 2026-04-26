@@ -327,6 +327,24 @@ fi
 
 log_success "All prerequisites satisfied"
 
+# Check available disk space (minimum 10GB recommended)
+log_info "Checking disk space..."
+AVAILABLE_SPACE=$(df -BG . | tail -1 | awk '{print $4}' | tr -d 'G')
+if [ "$AVAILABLE_SPACE" -lt 10 ]; then
+    log_warning "Low disk space: ${AVAILABLE_SPACE}GB available"
+    log_warning "Recommended minimum: 10GB for Docker images + models"
+    log_warning "Consider running: docker system prune -a --volumes -f"
+    echo ""
+    read -p "Continue anyway? (y/N) " -n 1 -r
+    echo ""
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        log_error "Setup aborted. Free up disk space and try again."
+        exit 1
+    fi
+else
+    log_success "Disk space OK: ${AVAILABLE_SPACE}GB available"
+fi
+
 # =============================================================================
 # Step 2: Create Data Directories
 # =============================================================================
@@ -339,7 +357,12 @@ mkdir -p ./data/qdrant
 mkdir -p ./data/redis
 
 # Set permissions for transformers cache (needs to be writable by container user)
-chmod 777 ./data/transformers_cache
+# Handle case where directory was created by Docker (root owned)
+if ! chmod 777 ./data/transformers_cache 2>/dev/null; then
+    log_info "Fixing permissions (requires sudo for Docker-created directories)..."
+    sudo chown -R $USER:$USER ./data
+    chmod 777 ./data/transformers_cache
+fi
 
 log_success "Data directories created"
 
