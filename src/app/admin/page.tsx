@@ -31,6 +31,7 @@ import BrandingSettingsTab from '@/components/admin/BrandingSettings';
 import TokenLimitsSettingsTab from '@/components/admin/tokens/TokenLimitsSettings';
 import TokenUsageDashboard from '@/components/admin/TokenUsageDashboard';
 import OllamaModelsTab from '@/components/admin/OllamaModelsTab';
+import OllamaCloudModelsTab from '@/components/admin/OllamaCloudModelsTab';
 import RerankerSettingsTab from '@/components/admin/settings/RerankerSettings';
 
 interface AllowedUser {
@@ -1288,7 +1289,10 @@ function AdminPageContent() {
 
         {/* Ollama Tab - Model Management */}
         {activeTab === 'ollama' && (
-          <OllamaModelsTab />
+          <div className="space-y-6">
+            <OllamaModelsTab />
+            <OllamaCloudModelsTab />
+          </div>
         )}
         </main>
       </div>

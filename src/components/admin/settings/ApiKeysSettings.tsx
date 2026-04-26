@@ -49,19 +49,14 @@ type SourceBadge = 'db' | 'env' | 'llm' | 'none';
 
 // Provider capabilities and route classification
 const PROVIDER_CAPABILITIES: Record<string, string[]> = {
-  openai: ['LLM', 'Embeddings', 'Images', 'TTS'],
-  gemini: ['LLM', 'Embeddings', 'Images', 'TTS'],
-  mistral: ['LLM', 'Embeddings'],
-  fireworks: ['LLM', 'Embeddings', 'Reranker'],
-  deepseek: ['LLM'],
   ollama: ['LLM'],
-  anthropic: ['LLM'],
+  'ollama-cloud': ['LLM'],
+  fireworks: ['LLM', 'Embeddings', 'Reranker'],
 };
 
-const ROUTE_1_PROVIDERS = ['openai', 'gemini', 'mistral', 'deepseek'];
-const ROUTE_2_PROVIDERS = ['fireworks', 'anthropic'];
-const ROUTE_3_PROVIDERS = ['ollama'];
-const EMBEDDING_PROVIDERS = ['openai', 'gemini', 'mistral', 'fireworks'];
+const ROUTE_2_PROVIDERS = ['fireworks'];
+const ROUTE_3_PROVIDERS = ['ollama', 'ollama-cloud'];
+const EMBEDDING_PROVIDERS = ['fireworks'];
 
 // ============================================================================
 // Status Badge Component
@@ -612,7 +607,6 @@ export default function ApiKeysSettings() {
   // Group providers by route
   // ============================================================================
 
-  const route1Providers = providers.filter((p) => ROUTE_1_PROVIDERS.includes(p.id));
   const route2Providers = providers.filter((p) => ROUTE_2_PROVIDERS.includes(p.id));
   const route3Providers = providers.filter((p) => ROUTE_3_PROVIDERS.includes(p.id));
 
@@ -673,53 +667,27 @@ export default function ApiKeysSettings() {
       <div className="bg-white border rounded-xl p-5">
         <SectionHeader
           title="LLM Providers"
-          subtitle="Route 1 via LiteLLM proxy · Route 2 direct"
+          subtitle="Direct providers and local Ollama"
         />
 
-        <div className="flex items-center gap-1.5 mb-4 text-xs text-gray-500">
-          <Info size={12} />
-          <span>
-            Route 1 providers go via LiteLLM proxy. Route 2 providers connect directly.{' '}
-            <a href="/admin?tab=settings&section=routes" className="text-blue-600 hover:underline inline-flex items-center gap-0.5">
-              See Routes <ExternalLink size={10} />
-            </a>
-          </span>
-        </div>
-
-        {/* Route 1 */}
+        {/* Route 2 - Direct Providers */}
         <div className="mb-4">
           <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 px-3">
-            Route 1 — LiteLLM Proxy
-          </div>
-          <div className="divide-y divide-gray-100">
-            {route1Providers.map(renderProviderRow)}
-          </div>
-        </div>
-
-        {/* Route 2 */}
-        <div className="mb-4">
-          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 px-3">
-            Route 2 — Direct Providers
+            Direct Providers
           </div>
           <div className="divide-y divide-gray-100">
             {route2Providers.map(renderProviderRow)}
           </div>
         </div>
 
-        {/* Route 3 */}
+        {/* Route 3 - Local / Ollama */}
         <div className="mb-3">
           <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 px-3">
-            Route 3 — Local / Ollama
+            Local / Ollama
           </div>
           <div className="divide-y divide-gray-100">
             {route3Providers.map(renderProviderRow)}
           </div>
-        </div>
-
-        {/* Footer note */}
-        <div className="flex items-center gap-1.5 text-xs text-gray-400 px-3 mt-2">
-          <Info size={12} />
-          <span>Image generation, podcasts, and translation automatically use OpenAI or Gemini keys.</span>
         </div>
       </div>
 

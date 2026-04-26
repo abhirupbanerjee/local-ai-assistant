@@ -166,6 +166,7 @@ export async function discoverOllamaCloudModels(): Promise<OllamaCloudDiscoveryR
   }
 
   try {
+    // Use native Ollama /tags endpoint
     const response = await fetch(`${OLLAMA_CLOUD_BASE_URL}/tags`, {
       method: 'GET',
       headers: {
@@ -187,12 +188,11 @@ export async function discoverOllamaCloudModels(): Promise<OllamaCloudDiscoveryR
 
     const data = await response.json();
 
-    // All models from the Ollama Cloud API are cloud models
-    // No need to filter by suffix - the API key authentication means we're accessing cloud models
-    const cloudModels: OllamaCloudModel[] = (data.models || []).map((model: { name: string; size?: number; digest?: string; modified_at?: string; details?: unknown }) => ({
-      id: model.name,
-      name: formatModelName(model.name),
-      tag: model.name.split(':')[1] || 'latest',
+    // Native Ollama /tags returns { models: [{ name, model, size, digest, modified_at, details }] }
+    const cloudModels: OllamaCloudModel[] = (data.models || []).map((model: { name: string; model: string; size?: number; digest?: string; modified_at?: string; details?: { format: string; family: string; parameter_size: string; quantization_level: string } }) => ({
+      id: model.name || model.model,
+      name: formatModelName(model.name || model.model),
+      tag: (model.name || model.model).split(':')[1] || 'latest',
       size: model.size || 0,
       digest: model.digest || '',
       modified_at: model.modified_at || new Date().toISOString(),
@@ -228,6 +228,7 @@ export async function testOllamaCloudConnection(): Promise<{ success: boolean; e
   }
 
   try {
+    // Use native Ollama /tags endpoint
     const response = await fetch(`${OLLAMA_CLOUD_BASE_URL}/tags`, {
       method: 'GET',
       headers: {
@@ -394,8 +395,37 @@ export async function disableCloudModel(modelId: string): Promise<boolean> {
 }
 
 /**
+ * Enable all cloud models in the database
+ */
+export async function enableAllCloudModels(): Promise<number> {
+  const db = await getDb();
+  const result = await db
+    .updateTable('enabled_models')
+    .set({ enabled: 1 })
+    .where('provider_id', '=', 'ollama-cloud')
+    .where('is_cloud', '=', 1)
+    .execute();
+  return result.length;
+}
+
+/**
+ * Disable all cloud models in the database
+ */
+export async function disableAllCloudModels(): Promise<number> {
+  const db = await getDb();
+  const result = await db
+    .updateTable('enabled_models')
+    .set({ enabled: 0 })
+    .where('provider_id', '=', 'ollama-cloud')
+    .where('is_cloud', '=', 1)
+    .execute();
+  return result.length;
+}
+
+/**
  * Sync discovered cloud models to database
  * Returns count of newly added models
+ * New models are disabled by default - user must explicitly enable them
  */
 export async function syncCloudModelsToDatabase(models: OllamaCloudModel[]): Promise<number> {
   const db = await getDb();
@@ -422,7 +452,7 @@ export async function syncCloudModelsToDatabase(models: OllamaCloudModel[]): Pro
           tool_capable: capabilities.toolCapable ? 1 : 0,
           vision_capable: capabilities.visionCapable ? 1 : 0,
           is_cloud: 1,
-          enabled: 1, // Auto-enable discovered cloud models
+          enabled: 0, // Disabled by default - user must explicitly enable
         })
         .execute();
 
@@ -431,6 +461,30 @@ export async function syncCloudModelsToDatabase(models: OllamaCloudModel[]): Pro
   }
 
   return addedCount;
+}
+
+/**
+ * Batch update enabled status for multiple models
+ * Returns count of updated models
+ */
+export async function batchUpdateModelStatus(updates: Array<{ modelId: string; enabled: boolean }>): Promise<number> {
+  const db = await getDb();
+  let updatedCount = 0;
+
+  for (const { modelId, enabled } of updates) {
+    const result = await db
+      .updateTable('enabled_models')
+      .set({ enabled: enabled ? 1 : 0 })
+      .where('id', '=', modelId)
+      .where('provider_id', '=', 'ollama-cloud')
+      .execute();
+    
+    if (result.length > 0) {
+      updatedCount++;
+    }
+  }
+
+  return updatedCount;
 }
 
 /**

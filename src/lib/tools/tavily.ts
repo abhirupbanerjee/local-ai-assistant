@@ -838,24 +838,32 @@ export const tavilyWebSearch: ToolDefinition = {
     });
 
     try {
+      const requestBody = {
+        api_key: apiKey,
+        query: args.query,
+        max_results: maxResults,
+        search_depth: searchDepth,
+        topic: settings.defaultTopic,
+        include_answer: includeAnswer,
+        include_raw_content: false,
+        include_domains: includeDomains.length > 0 ? includeDomains : undefined,
+        exclude_domains: excludeDomains.length > 0 ? excludeDomains : undefined,
+      };
+
       const response = await fetch('https://api.tavily.com/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          api_key: apiKey,
-          query: args.query,
-          max_results: maxResults,
-          search_depth: searchDepth,
-          topic: settings.defaultTopic,
-          include_answer: includeAnswer,
-          include_raw_content: false,
-          include_domains: includeDomains.length > 0 ? includeDomains : undefined,
-          exclude_domains: excludeDomains.length > 0 ? excludeDomains : undefined,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
-        throw new Error(`Tavily API error: ${response.status}`);
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.message || errorData.error || errorData.detail || JSON.stringify(errorData);
+        console.error('Tavily API error:', response.status, errorMessage, 'Request:', {
+          ...requestBody,
+          api_key: '[REDACTED]'
+        });
+        throw new Error(`Tavily API error: ${response.status} - ${errorMessage}`);
       }
 
       const data = await response.json();

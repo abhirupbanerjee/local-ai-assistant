@@ -340,14 +340,9 @@ async function runPostgresMigrations(database: Kysely<DB>): Promise<void> {
     .execute();
   console.log('[Kysely] Ensured ollama-cloud provider exists');
 
-  // Migration: Enable all existing ollama-cloud models (previously synced with enabled=0)
-  await database
-    .updateTable('enabled_models')
-    .set({ enabled: 1 })
-    .where('provider_id', '=', 'ollama-cloud')
-    .where('is_cloud', '=', 1)
-    .execute();
-  console.log('[Kysely] Enabled all existing Ollama Cloud models');
+  // NOTE: Removed migration that auto-enabled all ollama-cloud models.
+  // Models are now disabled by default when synced, and user must explicitly enable them.
+  // This respects user preferences across server restarts.
 
   console.log('[Kysely] PostgreSQL migrations completed');
 

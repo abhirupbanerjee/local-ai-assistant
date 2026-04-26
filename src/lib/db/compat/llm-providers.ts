@@ -7,6 +7,7 @@
  */
 
 import { getDb } from '../kysely';
+import { safeDecrypt } from '@/lib/encryption';
 
 // Re-export types and constants from sync module
 export type { LLMProvider, CreateProviderInput, UpdateProviderInput } from '../llm-providers';
@@ -40,12 +41,8 @@ function mapRowToProvider(row: LLMProviderRow): LLMProvider {
 
 // Environment variable mapping for auto-seeding
 export const PROVIDER_ENV_KEYS: Record<string, { apiKey?: string; apiBase?: string }> = {
-  openai: { apiKey: 'OPENAI_API_KEY' },
-  gemini: { apiKey: 'GEMINI_API_KEY' },
-  mistral: { apiKey: 'MISTRAL_API_KEY' },
   ollama: { apiBase: 'OLLAMA_API_BASE' },
-  anthropic: { apiKey: 'ANTHROPIC_API_KEY' },
-  deepseek: { apiKey: 'DEEPSEEK_API_KEY' },
+  'ollama-cloud': { apiKey: 'OLLAMA_API_KEY' },
   fireworks: { apiKey: 'FIREWORKS_AI_API_KEY' },
 };
 
@@ -198,11 +195,14 @@ export async function isProviderConfigured(id: string): Promise<boolean> {
 
 /**
  * Get API key for a provider
- * Returns stored key or falls back to environment variable
+ * Returns decrypted stored key or falls back to environment variable
  */
 export async function getProviderApiKey(id: string): Promise<string | null> {
   const provider = await getProvider(id);
-  if (provider?.apiKey) return provider.apiKey;
+  if (provider?.apiKey) {
+    // Decrypt the stored key (safeDecrypt handles both encrypted and unencrypted)
+    return safeDecrypt(provider.apiKey);
+  }
 
   // Fall back to environment variable
   const envConfig = PROVIDER_ENV_KEYS[id];

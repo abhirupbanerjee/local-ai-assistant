@@ -15,7 +15,10 @@ import {
   getAllCloudModels,
   enableCloudModel,
   disableCloudModel,
+  enableAllCloudModels,
+  disableAllCloudModels,
   syncCloudModelsToDatabase,
+  batchUpdateModelStatus,
   getCloudModelUsage,
 } from '@/lib/services/ollama-cloud';
 
@@ -106,6 +109,14 @@ export async function POST(request: NextRequest) {
         await disableCloudModel(modelId);
         return NextResponse.json({ success: true, message: `Model ${modelId} disabled` });
 
+      case 'enable-all':
+        const enabledCount = await enableAllCloudModels();
+        return NextResponse.json({ success: true, message: `Enabled ${enabledCount} cloud models` });
+
+      case 'disable-all':
+        const disabledCount = await disableAllCloudModels();
+        return NextResponse.json({ success: true, message: `Disabled ${disabledCount} cloud models` });
+
       case 'sync':
         // Sync discovered models to database
         const modelsToSync = models || [];
@@ -114,6 +125,19 @@ export async function POST(request: NextRequest) {
           success: true,
           addedCount,
           message: `Synced ${addedCount} new cloud models`,
+        });
+
+      case 'batch-update':
+        // Batch update enabled status for multiple models
+        const updates = body.updates as Array<{ modelId: string; enabled: boolean }> | undefined;
+        if (!updates || !Array.isArray(updates)) {
+          return NextResponse.json({ error: 'updates array is required' }, { status: 400 });
+        }
+        const updatedCount = await batchUpdateModelStatus(updates);
+        return NextResponse.json({
+          success: true,
+          updatedCount,
+          message: `Updated ${updatedCount} model(s)`,
         });
 
       default:

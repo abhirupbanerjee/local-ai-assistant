@@ -80,6 +80,7 @@ import {
   type ConversationContext,
 } from './conversation-context';
 import { getApiKey, getApiBase } from '@/lib/provider-helpers';
+import { getOllamaCloudApiKey } from './services/ollama-cloud';
 
 /**
  * Terminal tools that should stop the tool loop after successful execution.
@@ -236,6 +237,237 @@ async function isOllamaModelForRouting(model: string): Promise<boolean> {
     });
     return false;
   }
+}
+
+// ============ Ollama Cloud Client ============
+
+const OLLAMA_CLOUD_BASE_URL = 'https://ollama.com/api';
+
+/**
+ * Check if a model ID refers to an Ollama Cloud model.
+ * These models connect to ollama.com cloud infrastructure.
+ */
+export function isOllamaCloudModel(model: string): boolean {
+  return model.startsWith('ollama-cloud/') || model.endsWith('-cloud') || model.includes(':cloud');
+}
+
+/**
+ * Check if a model is an Ollama Cloud model by checking the database.
+ * This is needed because models may be stored without the 'ollama-cloud/' prefix.
+ */
+async function isOllamaCloudModelForRouting(model: string): Promise<boolean> {
+  if (isOllamaCloudModel(model)) return true;
+
+  try {
+    const dbModel = await getEnabledModel(model);
+    return dbModel?.providerId === 'ollama-cloud';
+  } catch (error) {
+    logger.warn('Failed to look up model provider for Ollama Cloud routing', {
+      model,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+/**
+ * Strip provider prefix from model ID for the Ollama Cloud API.
+ * e.g. "ollama-cloud/gemma3:4b" → "gemma3:4b"
+ */
+function getOllamaCloudModelId(model: string): string {
+  if (model.startsWith('ollama-cloud/')) return model.slice('ollama-cloud/'.length);
+  return model;
+}
+
+/**
+ * Stream a completion from Ollama Cloud API (native Ollama format).
+ * Uses /chat endpoint with Bearer token authentication.
+ */
+async function streamOllamaCloudCompletion(
+  params: {
+    model: string;
+    messages: OpenAI.Chat.ChatCompletionMessageParam[];
+    max_tokens?: number;
+    temperature?: number;
+    tools?: OpenAI.Chat.ChatCompletionTool[];
+    tool_choice?: 'auto' | 'required' | 'none' | { type: 'function'; function: { name: string } };
+  },
+  onChunk?: (text: string) => void,
+  onThinkingChunk?: (text: string) => void,
+): Promise<{ content: string | null; tool_calls: OpenAI.Chat.ChatCompletionMessageFunctionToolCall[] | undefined; thinkingContent: string | null; totalTokens: number }> {
+  const apiKey = await getOllamaCloudApiKey();
+  if (!apiKey) {
+    throw new Error('Ollama Cloud API key not configured. Please add your API key in Settings > LLM.');
+  }
+
+  const cloudModel = getOllamaCloudModelId(params.model);
+  const controller = new AbortController();
+  let wasAborted = false;
+
+  const streamingConfig = await getStreamingConfigMs();
+  const firstChunkTimeout = FIRST_CHUNK_TIMEOUT_MS; // Cloud models don't need cold-start timeout
+  const interChunkTimeoutMs = streamingConfig.TOOL_TIMEOUT_MS;
+
+  let timeoutId: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+    logger.warn('Ollama Cloud streaming timed out waiting for first chunk', { model: cloudModel });
+    wasAborted = true;
+    controller.abort();
+  }, firstChunkTimeout);
+
+  const resetTimeout = () => {
+    if (timeoutId) clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => {
+      logger.warn('Ollama Cloud streaming timed out between chunks', { model: cloudModel });
+      wasAborted = true;
+      controller.abort();
+    }, interChunkTimeoutMs);
+  };
+
+  // Build native Ollama request body
+  // Ollama /api/chat uses different format than OpenAI
+  const requestBody: Record<string, unknown> = {
+    model: cloudModel,
+    messages: params.messages,
+    stream: true,
+    options: {
+      num_predict: params.max_tokens ?? 2000,
+      temperature: params.temperature ?? 0.3,
+    },
+  };
+
+  // Add tools if provided (Ollama format)
+  if (params.tools?.length) {
+    requestBody.tools = params.tools
+      .filter((t): t is OpenAI.Chat.ChatCompletionFunctionTool => 'function' in t)
+      .map(t => ({
+        type: 'function',
+        function: t.function,
+      }));
+  }
+
+  let content = '';
+  let thinkingContent = '';
+  const thinkState = { inThink: false, tagBuf: '' };
+  const thinkModel = isThinkTagModel(params.model);
+  const toolCalls: { id: string; name: string; arguments: string }[] = [];
+  let totalTokens = 0;
+
+  try {
+    const response = await fetch(`${OLLAMA_CLOUD_BASE_URL}/chat`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      if (response.status === 401) {
+        throw new Error('Invalid Ollama Cloud API key. Please check your credentials.');
+      }
+      throw new Error(`Ollama Cloud error: ${response.status} - ${errorText}`);
+    }
+
+    // Parse native Ollama stream (newline-delimited JSON, not SSE)
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Ollama Cloud returned no response body');
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      resetTimeout();
+      buffer += decoder.decode(value, { stream: true });
+
+      // Process complete lines (native Ollama uses newline-delimited JSON)
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+
+        try {
+          const data = JSON.parse(line);
+
+          // Capture token usage from final chunk
+          if (data.done && data.eval_count !== undefined) {
+            totalTokens = (data.prompt_eval_count || 0) + data.eval_count;
+          }
+
+          // Native Ollama format: { message: { content, tool_calls }, done }
+          const message = data.message;
+          if (!message) continue;
+
+          if (message.content) {
+            if (thinkModel) {
+              const { visible, thinking } = parseThinkChunk(message.content, thinkState);
+              if (thinking) { thinkingContent += thinking; onThinkingChunk?.(thinking); }
+              if (visible) { content += visible; onChunk?.(visible); }
+            } else {
+              content += message.content;
+              onChunk?.(message.content);
+            }
+          }
+
+          // Native Ollama tool_calls format
+          if (message.tool_calls) {
+            for (const tc of message.tool_calls) {
+              if (tc.function) {
+                toolCalls.push({
+                  id: tc.id || `call_${Date.now()}_${toolCalls.length}`,
+                  name: tc.function.name,
+                  arguments: typeof tc.function.arguments === 'string' 
+                    ? tc.function.arguments 
+                    : JSON.stringify(tc.function.arguments),
+                });
+              }
+            }
+          }
+        } catch (parseError) {
+          // Skip malformed JSON lines
+          logger.debug('Ollama Cloud stream parse error', { line, error: String(parseError) });
+        }
+      }
+    }
+
+    if (wasAborted) {
+      throw new Error(
+        `Ollama Cloud streaming timeout (model: ${cloudModel}). ` +
+        `The model may be unresponsive.`
+      );
+    }
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(
+        `Ollama Cloud streaming timeout (model: ${cloudModel}). ` +
+        `The model may be unresponsive.`
+      );
+    }
+    throw error;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+
+  console.log(`[Ollama Cloud] Stream complete — model: ${cloudModel}, tokens: ${totalTokens}`);
+
+  return {
+    content: content || null,
+    tool_calls: toolCalls.length > 0 ? toolCalls.map(tc => ({
+      id: tc.id,
+      type: 'function' as const,
+      function: { name: tc.name, arguments: tc.arguments },
+    })) : undefined,
+    thinkingContent: thinkingContent || null,
+    totalTokens,
+  };
 }
 
 /**
@@ -1028,14 +1260,17 @@ export async function generateResponseWithTools(
   const useAnthropicDirect = isClaudeModel(effectiveModel);
   const useFireworksDirect = isFireworksModel(effectiveModel);
   const useOllamaDirect = await isOllamaModelForRouting(effectiveModel);
+  const useOllamaCloudDirect = await isOllamaCloudModelForRouting(effectiveModel);
   const routeLabel = useAnthropicDirect ? 'Anthropic SDK directly'
     : useFireworksDirect ? 'Fireworks AI directly'
     : useOllamaDirect ? 'Ollama directly'
+    : useOllamaCloudDirect ? 'Ollama Cloud directly'
     : 'LiteLLM/OpenAI path';
   console.log(`[Chat] Using ${routeLabel} for model: ${effectiveModel}`);
   const openai = useAnthropicDirect ? null
     : useFireworksDirect ? await getFireworksClient()
     : useOllamaDirect ? await getOllamaClient()
+    : useOllamaCloudDirect ? null // Ollama Cloud uses native fetch, not OpenAI SDK
     : await getOpenAI();
   const anthropicClient = useAnthropicDirect ? await getAnthropicClient() : null;
 
@@ -1356,6 +1591,21 @@ export async function generateResponseWithTools(
     );
     responseMessage = anthropicResult;
     accumulatedTokens += anthropicResult.totalTokens;
+  } else if (useOllamaCloudDirect) {
+    // Ollama Cloud uses native fetch with Ollama API format
+    responseMessage = await streamOllamaCloudCompletion(
+      {
+        model: effectiveModel,
+        messages,
+        max_tokens: effectiveMaxTokens,
+        temperature: llmSettings.temperature,
+        tools,
+        tool_choice: tools?.length ? effectiveToolChoice : undefined,
+      },
+      callbacks?.onChunk,
+      callbacks?.onThinkingChunk,
+    );
+    accumulatedTokens += responseMessage.totalTokens;
   } else {
     responseMessage = await streamOneCompletion(openai!, completionParams, callbacks?.onChunk, callbacks?.onThinkingChunk, { isOllama: useOllamaDirect });
     accumulatedTokens += responseMessage.totalTokens;

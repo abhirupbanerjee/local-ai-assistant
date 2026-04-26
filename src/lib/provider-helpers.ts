@@ -41,8 +41,15 @@ export const getApiKey = getProviderApiKey;
  * - "system": Ollama runs as native system service
  * 
  * If OLLAMA_API_BASE is explicitly set, it takes precedence.
+ * 
+ * Note: ollama-cloud uses API key (not base URL), so returns null.
  */
 export async function getApiBase(providerId: string): Promise<string | null> {
+  // ollama-cloud uses API key, not base URL
+  if (providerId === 'ollama-cloud') {
+    return null;
+  }
+  
   if (providerId !== 'ollama') {
     return getProviderApiBase(providerId);
   }
@@ -69,9 +76,11 @@ export async function getApiBase(providerId: string): Promise<string | null> {
  * Check if a provider is properly configured (has API key or base URL)
  */
 export async function isProviderConfigured(providerId: string): Promise<boolean> {
+  // Ollama local uses apiBase
   if (providerId === 'ollama') {
     return !!(await getApiBase('ollama'));
   }
+  // ollama-cloud and other providers use apiKey
   return !!(await getApiKey(providerId));
 }
 

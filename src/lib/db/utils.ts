@@ -60,12 +60,8 @@ export interface LLMProviderDefaults {
 }
 
 export const DEFAULT_PROVIDERS: LLMProviderDefaults[] = [
-  { id: 'openai', name: 'OpenAI', apiKey: null, apiBase: null, enabled: true },
-  { id: 'gemini', name: 'Google Gemini', apiKey: null, apiBase: null, enabled: true },
-  { id: 'mistral', name: 'Mistral AI', apiKey: null, apiBase: null, enabled: true },
   { id: 'ollama', name: 'Ollama (Local)', apiKey: null, apiBase: null, enabled: true },
-  { id: 'anthropic', name: 'Anthropic (Claude)', apiKey: null, apiBase: null, enabled: true },
-  { id: 'deepseek', name: 'DeepSeek', apiKey: null, apiBase: null, enabled: true },
+  { id: 'ollama-cloud', name: 'Ollama Cloud', apiKey: null, apiBase: null, enabled: true },
   { id: 'fireworks', name: 'Fireworks AI', apiKey: null, apiBase: null, enabled: true },
 ];
 
