@@ -47,6 +47,7 @@ data/postgres/
 data/qdrant/
 data/transformers_cache/
 data/global-docs/*
+data/backup/*
 
 # Keep data directory structure
 !data/.gitkeep
