@@ -170,17 +170,17 @@ TEST_WARNINGS=0
 
 test_pass() {
     echo -e "${GREEN}[✓]${NC} $1"
-    ((TEST_PASSED++))
+    TEST_PASSED=$((TEST_PASSED + 1))
 }
 
 test_fail() {
     echo -e "${RED}[✗]${NC} $1"
-    ((TEST_FAILED++))
+    TEST_FAILED=$((TEST_FAILED + 1))
 }
 
 test_warn() {
     echo -e "${YELLOW}[!]${NC} $1"
-    ((TEST_WARNINGS++))
+    TEST_WARNINGS=$((TEST_WARNINGS + 1))
 }
 
 test_info() {
@@ -188,7 +188,9 @@ test_info() {
 }
 
 check_postgres() {
-    if docker compose exec -T postgres pg_isready -U laap 2>/dev/null | grep -q "accepting connections"; then
+    local result
+    result=$(docker compose exec -T postgres pg_isready -U laap 2>&1) || true
+    if echo "$result" | grep -q "accepting connections"; then
         test_pass "PostgreSQL: healthy"
     else
         test_fail "PostgreSQL: not responding"
@@ -196,15 +198,20 @@ check_postgres() {
 }
 
 check_qdrant() {
-    if docker compose exec -T qdrant wget -qO- http://localhost:6333/readyz 2>/dev/null | grep -q "ok"; then
+    local result
+    result=$(docker compose exec -T qdrant wget -qO- http://localhost:6333/readyz 2>&1) || true
+    if echo "$result" | grep -q "ok"; then
         test_pass "Qdrant: healthy"
     else
-        test_fail "Qdrant: not responding"
+        test_fail "Qdrant: not responding (unhealthy)"
+        test_info "Check logs: docker compose logs qdrant"
     fi
 }
 
 check_redis() {
-    if docker compose exec -T redis redis-cli ping 2>/dev/null | grep -q "PONG"; then
+    local result
+    result=$(docker compose exec -T redis redis-cli ping 2>&1) || true
+    if echo "$result" | grep -q "PONG"; then
         test_pass "Redis: healthy"
     else
         test_fail "Redis: not responding"
@@ -212,24 +219,29 @@ check_redis() {
 }
 
 check_app() {
+    local result
     # Check if app container is running and healthy
-    APP_STATUS=$(docker compose ps app 2>/dev/null | grep -o "(healthy)" || echo "")
-    if [ -n "$APP_STATUS" ]; then
+    local app_status
+    app_status=$(docker compose ps app 2>/dev/null | grep -o "(healthy)" || echo "")
+    if [ -n "$app_status" ]; then
         test_pass "App: healthy"
     else
         # Try health endpoint
-        HEALTH_CHECK=$(docker compose exec -T app wget -qO- http://localhost:3000/api/health 2>/dev/null || echo "")
-        if [ -n "$HEALTH_CHECK" ]; then
+        result=$(docker compose exec -T app wget -qO- http://localhost:3000/api/health 2>&1) || true
+        if [ -n "$result" ] && echo "$result" | grep -q "ok\|healthy\|200"; then
             test_pass "App: healthy"
         else
             test_fail "App: not responding"
+            test_info "Check logs: docker compose logs app"
         fi
     fi
 }
 
 check_ollama_model() {
     local model=$1
-    if docker compose exec -T ollama ollama list 2>/dev/null | grep -q "$model"; then
+    local result
+    result=$(docker compose exec -T ollama ollama list 2>&1) || true
+    if echo "$result" | grep -q "$model"; then
         test_pass "Ollama Model ($model): downloaded"
     else
         test_warn "Ollama Model ($model): NOT downloaded"
@@ -265,29 +277,34 @@ check_reranker_model() {
 
 check_db_settings() {
     # Check if settings table has required configurations
-    local settings_found=0
+    local result
     
     # Check LLM settings
-    LLM_SETTINGS=$(docker compose exec -T postgres psql -U laap -d laap -t -c "SELECT value FROM settings WHERE key = 'llm-settings' LIMIT 1;" 2>/dev/null | tr -d ' \n')
-    if [ -n "$LLM_SETTINGS" ] && [ "$LLM_SETTINGS" != "" ]; then
+    result=$(docker compose exec -T postgres psql -U laap -d laap -t -c "SELECT value FROM settings WHERE key = 'llm-settings' LIMIT 1;" 2>&1) || true
+    local llm_settings
+    llm_settings=$(echo "$result" | tr -d ' \n')
+    if [ -n "$llm_settings" ] && [ "$llm_settings" != "" ]; then
         test_pass "LLM Settings: configured"
-        settings_found=1
     else
         test_warn "LLM Settings: NOT configured in database"
         test_info "Settings will use .env defaults"
     fi
     
     # Check Embedding settings
-    EMBED_SETTINGS=$(docker compose exec -T postgres psql -U laap -d laap -t -c "SELECT value FROM settings WHERE key = 'embedding-settings' LIMIT 1;" 2>/dev/null | tr -d ' \n')
-    if [ -n "$EMBED_SETTINGS" ] && [ "$EMBED_SETTINGS" != "" ]; then
+    result=$(docker compose exec -T postgres psql -U laap -d laap -t -c "SELECT value FROM settings WHERE key = 'embedding-settings' LIMIT 1;" 2>&1) || true
+    local embed_settings
+    embed_settings=$(echo "$result" | tr -d ' \n')
+    if [ -n "$embed_settings" ] && [ "$embed_settings" != "" ]; then
         test_pass "Embedding Settings: configured"
     else
         test_warn "Embedding Settings: NOT configured in database"
     fi
     
     # Check Reranker settings
-    RERANK_SETTINGS=$(docker compose exec -T postgres psql -U laap -d laap -t -c "SELECT value FROM settings WHERE key = 'reranker-settings' LIMIT 1;" 2>/dev/null | tr -d ' \n')
-    if [ -n "$RERANK_SETTINGS" ] && [ "$RERANK_SETTINGS" != "" ]; then
+    result=$(docker compose exec -T postgres psql -U laap -d laap -t -c "SELECT value FROM settings WHERE key = 'reranker-settings' LIMIT 1;" 2>&1) || true
+    local rerank_settings
+    rerank_settings=$(echo "$result" | tr -d ' \n')
+    if [ -n "$rerank_settings" ] && [ "$rerank_settings" != "" ]; then
         test_pass "Reranker Settings: configured"
     else
         test_warn "Reranker Settings: NOT configured in database"
