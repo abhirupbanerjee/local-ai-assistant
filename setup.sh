@@ -586,15 +586,16 @@ mkdir -p ./data/transformers_cache
 mkdir -p ./data/qdrant
 mkdir -p ./data/redis
 
-# Set permissions for transformers cache (needs to be writable by container user)
+# Set ownership for container user (uid 1001, gid 1001 = nextjs:nodejs)
+# This is required because the container runs as non-root user 'nextjs'
 # Handle case where directory was created by Docker (root owned)
-if ! chmod 777 ./data/transformers_cache 2>/dev/null; then
+if ! chown 1001:1001 ./data/app ./data/transformers_cache 2>/dev/null; then
     log_info "Fixing permissions (requires sudo for Docker-created directories)..."
-    sudo chown -R $USER:$USER ./data
-    chmod 777 ./data/transformers_cache
+    sudo chown -R 1001:1001 ./data/app ./data/transformers_cache
+    sudo chown -R $USER:$USER ./data/qdrant ./data/redis
 fi
 
-log_success "Data directories created"
+log_success "Data directories created with proper ownership (uid 1001:1001 for container)"
 
 # =============================================================================
 # Step 3: Create Environment File

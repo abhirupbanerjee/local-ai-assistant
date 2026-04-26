@@ -837,7 +837,7 @@ export async function generateResponse(
  */
 // Streaming timeouts — generous to accommodate Ollama model loading
 const FIRST_CHUNK_TIMEOUT_MS = 120_000;        // 2 min: cloud models
-const FIRST_CHUNK_TIMEOUT_OLLAMA_MS = 180_000; // 3 min: Ollama (CPU cold-start)
+const FIRST_CHUNK_TIMEOUT_OLLAMA_MS = 300_000; // 5 min: Ollama (CPU cold-start, increased for reliability)
 // Inter-chunk timeout now loaded from DB via getStreamingConfigMs() (default 120s)
 
 // Ollama's OpenAI-compatible /v1/chat/completions endpoint does not support

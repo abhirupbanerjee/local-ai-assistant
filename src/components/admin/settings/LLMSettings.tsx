@@ -13,6 +13,14 @@ interface LLMSettings {
   updatedBy?: string;
 }
 
+interface LlmFallbackSettings {
+  universalFallback: string | null;
+  maxRetryAttempts: number;
+  healthCacheDuration: 'hourly' | 'daily' | 'disabled';
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 interface AvailableModel {
   id: string;
   name: string;
@@ -51,6 +59,12 @@ export default function LLMSettingsTab() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [modified, setModified] = useState(false);
+
+  // Fallback settings state
+  const [fallbackSettings, setFallbackSettings] = useState<LlmFallbackSettings | null>(null);
+  const [originalFallbackSettings, setOriginalFallbackSettings] = useState<LlmFallbackSettings | null>(null);
+  const [fallbackModified, setFallbackModified] = useState(false);
+  const [savingFallback, setSavingFallback] = useState(false);
 
   // Ollama Cloud state
   const [cloudConfigured, setCloudConfigured] = useState(false);
@@ -211,6 +225,11 @@ export default function LLMSettingsTab() {
       if (data.availableModels) {
         setAvailableModels(data.availableModels);
       }
+      // Load fallback settings
+      if (data.llmFallback) {
+        setFallbackSettings(data.llmFallback);
+        setOriginalFallbackSettings(data.llmFallback);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load settings');
     } finally {
@@ -268,6 +287,66 @@ export default function LLMSettingsTab() {
     setSettings(originalSettings);
     setModified(false);
   };
+
+  // Fallback settings handlers
+  const handleFallbackChange = (field: keyof LlmFallbackSettings, value: string | number | null) => {
+    if (!fallbackSettings) return;
+    
+    const newSettings = { ...fallbackSettings, [field]: value };
+    setFallbackSettings(newSettings);
+    setFallbackModified(JSON.stringify(newSettings) !== JSON.stringify(originalFallbackSettings));
+  };
+
+  const saveFallbackSettings = async () => {
+    if (!fallbackSettings) return;
+    setSavingFallback(true);
+    setError(null);
+    setSuccess(false);
+
+    try {
+      const response = await fetch('/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'llm-fallback',
+          settings: {
+            universalFallback: fallbackSettings.universalFallback || null,
+            maxRetryAttempts: fallbackSettings.maxRetryAttempts,
+            healthCacheDuration: fallbackSettings.healthCacheDuration,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to save fallback settings');
+      }
+
+      setOriginalFallbackSettings(fallbackSettings);
+      setFallbackModified(false);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save fallback settings');
+    } finally {
+      setSavingFallback(false);
+    }
+  };
+
+  const resetFallbackToDefaults = () => {
+    if (!originalFallbackSettings) return;
+    setFallbackSettings(originalFallbackSettings);
+    setFallbackModified(false);
+  };
+
+  // Get eligible fallback models (must have both vision + tools capability)
+  const eligibleFallbackModels = availableModels.filter(model => {
+    // Check if model has both capabilities by parsing description
+    const desc = model.description.toLowerCase();
+    const hasTools = desc.includes('tool');
+    const hasVision = desc.includes('vision');
+    return hasTools && hasVision;
+  });
 
   if (loading) {
     return (
@@ -431,6 +510,142 @@ export default function LLMSettingsTab() {
         >
           Save LLM Settings
         </Button>
+      </div>
+
+      {/* Fallback Settings Section */}
+      <div className="border-t pt-6 mt-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Brain className="text-orange-600" size={20} />
+          <h3 className="text-lg font-medium">LLM Fallback Settings</h3>
+        </div>
+
+        <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-4">
+          <div className="flex items-start gap-3">
+            <Info className="text-orange-500 mt-0.5" size={18} />
+            <div className="text-sm text-orange-700">
+              <p className="mb-1">
+                <strong>Fallback Model:</strong> When the primary model fails or lacks required capabilities (vision/tools), the system automatically switches to this backup model.
+              </p>
+              <p>
+                The fallback model must support <strong>both vision and tools</strong> to handle any request type.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {!fallbackSettings ? (
+          <div className="bg-gray-50 border rounded-lg p-4 text-gray-600 text-sm">
+            Loading fallback settings...
+          </div>
+        ) : (
+          <div className="bg-white border rounded-lg p-6 space-y-6">
+            {/* Fallback Model Selection */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Universal Fallback Model
+              </label>
+              <select
+                value={fallbackSettings.universalFallback || ''}
+                onChange={(e) => handleFallbackChange('universalFallback', e.target.value || null)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+              >
+                <option value="">No fallback configured</option>
+                {eligibleFallbackModels.length > 0 ? (
+                  eligibleFallbackModels.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name} ({model.provider}) - {model.description}
+                    </option>
+                  ))
+                ) : (
+                  availableModels.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name} ({model.provider}) - {model.description}
+                    </option>
+                  ))
+                )}
+              </select>
+              <p className="mt-1 text-sm text-gray-500">
+                {fallbackSettings.universalFallback 
+                  ? `Currently selected: ${fallbackSettings.universalFallback}`
+                  : '⚠️ No fallback model configured - requests will fail if primary model is unavailable'}
+              </p>
+              {eligibleFallbackModels.length === 0 && (
+                <p className="mt-1 text-sm text-amber-600">
+                  ⚠️ No models with both vision + tools capability found. Consider enabling a capable model.
+                </p>
+              )}
+            </div>
+
+            {/* Max Retry Attempts */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Max Retry Attempts: {fallbackSettings.maxRetryAttempts}
+              </label>
+              <input
+                type="range"
+                min="1"
+                max="3"
+                step="1"
+                value={fallbackSettings.maxRetryAttempts}
+                onChange={(e) => handleFallbackChange('maxRetryAttempts', parseInt(e.target.value))}
+                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+              />
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>1 (Primary only)</span>
+                <span>2 (Primary + Fallback)</span>
+                <span>3 (Multiple fallbacks)</span>
+              </div>
+            </div>
+
+            {/* Health Cache Duration */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Health Cache Duration
+              </label>
+              <select
+                value={fallbackSettings.healthCacheDuration}
+                onChange={(e) => handleFallbackChange('healthCacheDuration', e.target.value as 'hourly' | 'daily' | 'disabled')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+              >
+                <option value="hourly">Hourly (remember failed models for 1 hour)</option>
+                <option value="daily">Daily (remember failed models for 24 hours)</option>
+                <option value="disabled">Disabled (always try all models)</option>
+              </select>
+              <p className="mt-1 text-sm text-gray-500">
+                How long to remember that a model failed before trying it again
+              </p>
+            </div>
+
+            {/* Last Updated */}
+            {fallbackSettings.updatedAt && (
+              <div className="text-sm text-gray-500">
+                Last updated: {new Date(fallbackSettings.updatedAt).toLocaleString()}
+                {fallbackSettings.updatedBy && ` by ${fallbackSettings.updatedBy}`}
+              </div>
+            )}
+
+            {/* Fallback Action Buttons */}
+            <div className="flex justify-between">
+              <Button
+                variant="secondary"
+                onClick={resetFallbackToDefaults}
+                disabled={!fallbackModified || savingFallback}
+                className="flex items-center gap-2"
+              >
+                <RefreshCw size={16} />
+                Reset Changes
+              </Button>
+              <Button
+                onClick={saveFallbackSettings}
+                loading={savingFallback}
+                disabled={!fallbackModified}
+                className="bg-orange-600 hover:bg-orange-700"
+              >
+                Save Fallback Settings
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Ollama Cloud Section */}

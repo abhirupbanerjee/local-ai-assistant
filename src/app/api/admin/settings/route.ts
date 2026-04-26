@@ -37,6 +37,8 @@ import {
   BRANDING_ICONS,
   getDefaultSystemPrompt,
   setPWASettings,
+  getLlmFallbackSettings,
+  setLlmFallbackSettings,
 } from '@/lib/db/compat';
 import { getConfigValue } from '@/lib/config-loader';
 import { invalidateQueryCache, invalidateTavilyCache } from '@/lib/redis';
@@ -208,6 +210,12 @@ export async function GET() {
           'azure-di': Boolean((ocrSettings.azureDiEndpoint && ocrSettings.azureDiKey) || (process.env.AZURE_DI_ENDPOINT && process.env.AZURE_DI_KEY)),
           'pdf-parse': true,
         },
+      },
+      // Get LLM fallback settings
+      llmFallback: {
+        ...await getLlmFallbackSettings(),
+        updatedAt: (await getSettingMetadata('llm-fallback-settings'))?.updatedAt || new Date().toISOString(),
+        updatedBy: (await getSettingMetadata('llm-fallback-settings'))?.updatedBy || 'system',
       },
       availableModels: await getAvailableModels(),
       brandingIcons: BRANDING_ICONS,
@@ -1254,6 +1262,61 @@ export async function PUT(request: NextRequest) {
             ...result,
             updatedAt: meta?.updatedAt || new Date().toISOString(),
             updatedBy: meta?.updatedBy || user.email,
+          },
+        });
+      }
+
+      case 'llm-fallback': {
+        const { universalFallback, maxRetryAttempts, healthCacheDuration } = settings;
+
+        // Validate maxRetryAttempts
+        if (typeof maxRetryAttempts !== 'number' || maxRetryAttempts < 1 || maxRetryAttempts > 3) {
+          return NextResponse.json<ApiError>(
+            { error: 'Max retry attempts must be between 1 and 3', code: 'VALIDATION_ERROR' },
+            { status: 400 }
+          );
+        }
+
+        // Validate healthCacheDuration
+        if (!['hourly', 'daily', 'disabled'].includes(healthCacheDuration)) {
+          return NextResponse.json<ApiError>(
+            { error: 'Health cache duration must be "hourly", "daily", or "disabled"', code: 'VALIDATION_ERROR' },
+            { status: 400 }
+          );
+        }
+
+        // Validate universalFallback if provided (must be an enabled model with vision + tools)
+        if (universalFallback !== null && universalFallback !== '') {
+          const { getEnabledModel } = await import('@/lib/db/compat/enabled-models');
+          const model = await getEnabledModel(universalFallback);
+          if (!model) {
+            return NextResponse.json<ApiError>(
+              { error: `Model "${universalFallback}" is not enabled. Enable it first in Settings → LLM.`, code: 'VALIDATION_ERROR' },
+              { status: 400 }
+            );
+          }
+          if (!model.visionCapable || !model.toolCapable) {
+            return NextResponse.json<ApiError>(
+              { error: `Model "${universalFallback}" must have both vision and tools capabilities for fallback.`, code: 'VALIDATION_ERROR' },
+              { status: 400 }
+            );
+          }
+        }
+
+        result = await setLlmFallbackSettings({
+          universalFallback: universalFallback || null,
+          maxRetryAttempts,
+          healthCacheDuration,
+        }, user.email);
+
+        // Return with metadata
+        const fallbackMeta = await getSettingMetadata('llm-fallback-settings');
+        return NextResponse.json({
+          success: true,
+          llmFallback: {
+            ...result,
+            updatedAt: fallbackMeta?.updatedAt || new Date().toISOString(),
+            updatedBy: fallbackMeta?.updatedBy || user.email,
           },
         });
       }

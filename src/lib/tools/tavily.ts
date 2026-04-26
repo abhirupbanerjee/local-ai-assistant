@@ -803,7 +803,7 @@ export const tavilyWebSearch: ToolDefinition = {
     const searchDepth = args.search_depth ?? settings.defaultSearchDepth ?? 'basic';
 
     // Handle include_answer: 'none' maps to false for API, 'basic'/'advanced' pass through
-    let includeAnswer: false | 'basic' | 'advanced' = false;
+    let includeAnswer: false | 'basic' | 'advanced' = 'basic';
     if (args.include_answer !== undefined) {
       // LLM sends 'none' string, convert to boolean false for Tavily API
       includeAnswer = args.include_answer === 'none' ? false : args.include_answer;
