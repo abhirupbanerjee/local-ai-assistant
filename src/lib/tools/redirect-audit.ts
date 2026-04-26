@@ -84,7 +84,7 @@ async function followRedirects(
       const res = await fetch(currentUrl, {
         redirect: 'manual',
         signal: controller.signal,
-        headers: { 'User-Agent': 'PolicyBot-RedirectAudit/1.0' },
+        headers: { 'User-Agent': 'LaaP-RedirectAudit/1.0' },
       });
       clearTimeout(timer);
 

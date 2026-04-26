@@ -86,7 +86,7 @@ const PROVIDERS = [
 export default function LandingPage() {
   const { status } = useSession();
   const router = useRouter();
-  const [brandingName, setBrandingName] = useState('Policy Bot');
+  const [brandingName, setBrandingName] = useState('Local AI Assistant Platform');
 
   // Redirect authenticated users to chat
   useEffect(() => {

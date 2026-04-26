@@ -1,10 +1,10 @@
 #!/bin/bash
-# Setup script for Policy Bot
+# Setup script for Local AI Assistant Platform
 # Run this once before first docker-compose up
 
 set -e
 
-echo "Setting up Policy Bot directories..."
+echo "Setting up Local AI Assistant Platform directories..."
 
 # Create data directories with correct permissions
 mkdir -p ./data/app

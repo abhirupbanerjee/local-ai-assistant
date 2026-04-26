@@ -306,6 +306,7 @@ export interface EnabledModelsTable {
   max_input_tokens: number | null;
   max_output_tokens: number | null;
   is_default: Generated<number>;
+  is_cloud: Generated<number>;
   enabled: Generated<number>;
   sort_order: Generated<number>;
   created_at: Generated<string>;

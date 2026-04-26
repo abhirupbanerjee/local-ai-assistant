@@ -97,6 +97,8 @@ export async function createLocalEmbeddings(
     // This prevents EACCES errors when running as non-root in Docker
     env.cacheDir = process.env.TRANSFORMERS_CACHE || '/tmp/transformers_cache';
     env.allowLocalModels = false;
+    // Note: HF_TOKEN environment variable is automatically used by @xenova/transformers
+    // for authentication with HuggingFace Hub (helps with rate limits and gated models)
 
     // Load model if not loaded or different model requested
     if (!localEmbedder || currentModel !== model) {

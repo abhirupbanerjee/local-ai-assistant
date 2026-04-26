@@ -16,7 +16,7 @@ import { seedDefaultProviders } from './llm-providers';
 
 // Database file path
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
-const DB_PATH = process.env.SQLITE_DB_PATH || path.join(DATA_DIR, 'policybot.db');
+const DB_PATH = process.env.SQLITE_DB_PATH || path.join(DATA_DIR, 'laap.db');
 
 // Provider guard: Track SQLite access when PostgreSQL is the configured provider
 let sqliteAccessWarningShown = false;
@@ -1205,6 +1205,12 @@ function runMigrations(database: Database.Database): void {
     console.log('[DB Migration] Added max_output_tokens column to enabled_models');
   }
 
+  // Migration: Add is_cloud column to enabled_models table for Ollama Cloud support
+  if (!enabledModelsColumnNames.includes('is_cloud')) {
+    database.exec('ALTER TABLE enabled_models ADD COLUMN is_cloud INTEGER DEFAULT 0');
+    console.log('[DB Migration] Added is_cloud column to enabled_models for Ollama Cloud support');
+  }
+
   // Migration: Add xlsx and pptx to workspace_outputs file_type CHECK constraint
   // SQLite requires table recreation to modify CHECK constraints
   const workspaceOutputsExists = database.prepare(
@@ -1808,9 +1814,29 @@ function initializeDefaultSettings(database: Database.Database): void {
       cacheTTLSeconds: 3600,
     },
     'llm-settings': {
-      model: 'gpt-4o-mini',
-      temperature: 0.3,
+      model: 'qwen3:1.7b',
+      temperature: 0.2,
       maxTokens: 2000,
+      promptOptimizationMaxTokens: 2000,
+    },
+    'embedding-settings': {
+      model: 'ollama-qwen3-embedding:0.6b',
+      dimensions: 1024,
+      fallbackModel: 'ollama-qwen3-embedding:0.6b',
+    },
+    'reranker-settings': {
+      enabled: true,
+      providers: [
+        { provider: 'ollama', enabled: true },
+        { provider: 'bge-large', enabled: true },
+        { provider: 'bge-base', enabled: true },
+        { provider: 'local', enabled: true },
+        { provider: 'cohere', enabled: false },
+        { provider: 'fireworks', enabled: false },
+      ],
+      topKForReranking: 50,
+      minRerankerScore: 0.3,
+      cacheTTLSeconds: 3600,
     },
     'tavily-settings': {
       enabled: false,

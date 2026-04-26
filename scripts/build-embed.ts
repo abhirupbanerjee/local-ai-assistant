@@ -25,7 +25,7 @@ async function buildEmbed() {
     sourcemap: false,
     target: ['es2020', 'chrome80', 'firefox78', 'safari13'],
     format: 'iife',
-    globalName: 'PolicyBotEmbed',
+    globalName: 'LaaPEmbed',
     outfile: path.join(outDir, 'workspace.js'),
     define: {
       'process.env.NODE_ENV': '"production"',

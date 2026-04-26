@@ -90,6 +90,7 @@ const TOOL_CAPABLE_PATTERNS = [
   // Ollama (some models)
   /^llama3/,
   /^llama4/,  // Future-proofing
+  /^gemma4/,
   /^qwen/,
   /^mistral$/,
 ];
@@ -113,6 +114,10 @@ const VISION_CAPABLE_PATTERNS = [
   /^mistral-small-3/,
   // Anthropic Claude (all Claude 3+ models support vision)
   /^claude/,
+  // Ollama multimodal models
+  /^gemma4/,
+  /^qwen3\.5/,
+  /^qwen\d?(\.\d+)?-vl/,
   // Note: DeepSeek does NOT support vision
 ];
 
@@ -469,15 +474,15 @@ async function discoverOllamaModels(apiBase: string): Promise<DiscoveredModel[]>
 
   const filtered = data.models.filter(m => isChatModel(m.name));
   const models = await Promise.all(filtered.map(async m => {
-    // Ollama model names often include tags like ":latest"
-    const baseName = m.name.split(':')[0];
-    const id = `ollama-${baseName}`;
+    // Preserve the exact Ollama tag. Dropping ":0.8b"/":latest" makes the
+    // app request a model name that may not exist in the local Ollama store.
+    const id = m.name;
     return {
       id,
       name: generateDisplayName(id),
       provider: 'ollama',
-      toolCapable: isToolCapable(baseName),
-      visionCapable: isVisionCapable(baseName),
+      toolCapable: isToolCapable(id),
+      visionCapable: isVisionCapable(id),
       maxInputTokens: null,  // Ollama doesn't report this
       maxOutputTokens: getDefaultOutputTokens('ollama'),
       isEnabled: !!(await getEnabledModel(id)),

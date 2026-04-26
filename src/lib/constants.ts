@@ -31,7 +31,7 @@ export const EMBEDDING_BATCH_SIZE = 100;
 export interface EmbeddingModelDefinition {
   id: string;
   name: string;
-  provider: 'openai' | 'mistral' | 'gemini' | 'fireworks' | 'local';
+  provider: 'openai' | 'mistral' | 'gemini' | 'fireworks' | 'local' | 'ollama';
   dimensions: number;
   local: boolean;
 }
@@ -39,6 +39,7 @@ export interface EmbeddingModelDefinition {
 /**
  * Available embedding models
  * Cloud providers require API keys; local models use @xenova/transformers
+ * Ollama models require Ollama server running locally
  */
 export const EMBEDDING_MODELS: EmbeddingModelDefinition[] = [
   // Cloud providers
@@ -49,7 +50,11 @@ export const EMBEDDING_MODELS: EmbeddingModelDefinition[] = [
   // Fireworks AI (OpenAI-compatible, requires FIREWORKS_AI_API_KEY)
   { id: 'nomic-ai/nomic-embed-text-v1.5', name: 'Nomic Embed v1.5 (Fireworks)', provider: 'fireworks', dimensions: 768, local: false },
   { id: 'fireworks/qwen3-embedding-8b', name: 'Qwen3 Embedding 8B (Fireworks)', provider: 'fireworks', dimensions: 4096, local: false },
-  // Local models (via @xenova/transformers - no API key required)
+  // Ollama models (local inference, requires Ollama server)
+  { id: 'ollama-qwen3-embedding:0.6b', name: 'Qwen3 Embedding 0.6B (Ollama)', provider: 'ollama', dimensions: 1024, local: true },
+  { id: 'ollama-nomic-embed-text', name: 'Nomic Embed Text (Ollama)', provider: 'ollama', dimensions: 768, local: true },
+  { id: 'ollama-mxbai-embed-large', name: 'MixedBread Large (Ollama)', provider: 'ollama', dimensions: 1024, local: true },
+  // Local models (via @xenova/transformers - no API key required, deprecated in favor of Ollama)
   { id: 'mxbai-embed-large', name: 'MixedBread Large (Local)', provider: 'local', dimensions: 1024, local: true },
   { id: 'bge-m3', name: 'BGE-M3 (Local)', provider: 'local', dimensions: 1024, local: true },
 ];

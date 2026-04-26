@@ -32,6 +32,27 @@ async function getVectorSize(): Promise<number> {
   }
 }
 
+function extractCollectionVectorSize(collectionInfo: unknown): number | null {
+  const params = (collectionInfo as { config?: { params?: { vectors?: unknown } } })?.config?.params;
+  const vectors = params?.vectors;
+
+  if (vectors && typeof vectors === 'object' && 'size' in vectors) {
+    const size = (vectors as { size?: unknown }).size;
+    return typeof size === 'number' ? size : null;
+  }
+
+  return null;
+}
+
+function isBadRequestError(error: unknown): boolean {
+  const maybeError = error as { status?: unknown; statusCode?: unknown; code?: unknown; message?: unknown };
+  const status = maybeError.status ?? maybeError.statusCode ?? maybeError.code;
+  if (status === 400 || status === '400') return true;
+
+  const message = typeof maybeError.message === 'string' ? maybeError.message.toLowerCase() : '';
+  return message.includes('bad request') || message.includes('status code 400');
+}
+
 /**
  * Collection name helpers for Qdrant
  */
@@ -191,6 +212,15 @@ export class QdrantVectorStore implements VectorStoreClient {
     }
   }
 
+  async getCollectionVectorSize(name: string): Promise<number | null> {
+    try {
+      const info = await getClient().getCollection(name);
+      return extractCollectionVectorSize(info);
+    } catch {
+      return null;
+    }
+  }
+
   // ============ Document Operations ============
 
   async addDocuments(
@@ -303,6 +333,16 @@ export class QdrantVectorStore implements VectorStoreClient {
       return { ids: [], documents: [], metadatas: [], scores: [] };
     }
 
+    const collectionVectorSize = await this.getCollectionVectorSize(collectionName);
+    if (collectionVectorSize !== null && collectionVectorSize !== queryEmbedding.length) {
+      console.warn(
+        `[Qdrant] Skipping collection ${collectionName}: vector size mismatch ` +
+        `(collection=${collectionVectorSize}, query=${queryEmbedding.length}). ` +
+        `Reindex documents after changing embedding models.`
+      );
+      return { ids: [], documents: [], metadatas: [], scores: [] };
+    }
+
     const qdrant = getClient();
 
     const searchParams: Parameters<typeof qdrant.search>[1] = {
@@ -316,7 +356,21 @@ export class QdrantVectorStore implements VectorStoreClient {
       searchParams.filter = convertFilter(filter);
     }
 
-    const results = await qdrant.search(collectionName, searchParams);
+    let results: Awaited<ReturnType<typeof qdrant.search>>;
+    try {
+      results = await qdrant.search(collectionName, searchParams);
+    } catch (error) {
+      if (isBadRequestError(error)) {
+        console.warn(
+          `[Qdrant] Skipping collection ${collectionName}: search returned Bad Request ` +
+          `(queryVectorSize=${queryEmbedding.length}, collectionVectorSize=${collectionVectorSize ?? 'unknown'}). ` +
+          `This usually means documents need to be reindexed for the active embedding model.`
+        );
+        return { ids: [], documents: [], metadatas: [], scores: [] };
+      }
+
+      throw error;
+    }
 
     console.log(`[Qdrant] Query to ${collectionName} returned ${results.length} results`);
 

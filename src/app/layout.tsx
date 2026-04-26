@@ -8,8 +8,8 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: 'Policy Bot',
-  description: 'AI-powered policy assistant for government staff',
+  title: 'Local AI Assistant Platform',
+  description: 'AI-powered assistant platform for government and enterprise',
 };
 
 export default function RootLayout({

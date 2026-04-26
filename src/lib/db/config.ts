@@ -103,12 +103,12 @@ export const DEFAULT_PWA_SETTINGS: PWASettings = {
 };
 
 export interface EmbeddingSettings {
-  model: string;           // e.g., 'text-embedding-3-large'
-  dimensions: number;      // e.g., 3072
-  fallbackModel?: string;  // Fallback model if primary fails (default: 'text-embedding-3-large')
+  model: string;           // e.g., 'ollama-qwen3-embedding:0.6b'
+  dimensions: number;      // e.g., 1024
+  fallbackModel?: string;  // Fallback model if primary fails
 }
 
-export type RerankerProvider = 'bge-large' | 'cohere' | 'fireworks' | 'bge-base' | 'local';
+export type RerankerProvider = 'ollama' | 'bge-large' | 'cohere' | 'fireworks' | 'bge-base' | 'local';
 
 export interface RerankerProviderConfig {
   provider: RerankerProvider;
@@ -127,11 +127,12 @@ export interface RerankerSettings {
 export const DEFAULT_RERANKER_SETTINGS: RerankerSettings = {
   enabled: true,
   providers: [
+    { provider: 'ollama', enabled: true },
     { provider: 'bge-large', enabled: true },
-    { provider: 'cohere', enabled: true },
-    { provider: 'fireworks', enabled: true },
     { provider: 'bge-base', enabled: true },
     { provider: 'local', enabled: true },
+    { provider: 'cohere', enabled: false },
+    { provider: 'fireworks', enabled: false },
   ],
   topKForReranking: 50,
   minRerankerScore: 0.3,
@@ -711,8 +712,8 @@ export function getBrandingSettings(): BrandingSettings {
   return config.branding;
 }
 
-/** Default fallback embedding model (OpenAI Large - most reliable) */
-export const DEFAULT_FALLBACK_EMBEDDING_MODEL = 'text-embedding-3-large';
+/** Default fallback embedding model for local-first deployments */
+export const DEFAULT_FALLBACK_EMBEDDING_MODEL = 'ollama-qwen3-embedding:0.6b';
 
 /**
  * Get embedding settings

@@ -35,9 +35,29 @@ const DEFAULT_SETTINGS: Record<string, object> = {
     cacheTTLSeconds: 3600,
   },
   'llm-settings': {
-    model: 'gpt-4o-mini',
-    temperature: 0.3,
+    model: 'qwen3:1.7b',
+    temperature: 0.2,
     maxTokens: 2000,
+    promptOptimizationMaxTokens: 2000,
+  },
+  'embedding-settings': {
+    model: 'ollama-qwen3-embedding:0.6b',
+    dimensions: 1024,
+    fallbackModel: 'ollama-qwen3-embedding:0.6b',
+  },
+  'reranker-settings': {
+    enabled: true,
+    providers: [
+      { provider: 'ollama', enabled: true },
+      { provider: 'bge-large', enabled: true },
+      { provider: 'bge-base', enabled: true },
+      { provider: 'local', enabled: true },
+      { provider: 'cohere', enabled: false },
+      { provider: 'fireworks', enabled: false },
+    ],
+    topKForReranking: 50,
+    minRerankerScore: 0.3,
+    cacheTTLSeconds: 3600,
   },
   'tavily-settings': {
     enabled: false,

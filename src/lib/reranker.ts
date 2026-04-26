@@ -2,6 +2,7 @@
  * Reranker Module
  *
  * Supports multiple providers with priority-based fallback:
+ * - Ollama Reranker (local inference via Ollama server)
  * - BGE Reranker Large (cross-encoder, best accuracy, free)
  * - Cohere API (fast, requires API key)
  * - BGE Reranker Base (cross-encoder, smaller, free)
@@ -104,6 +105,78 @@ async function rerankWithCohere(
     // Fallback to original chunks on error
     return chunks;
   }
+}
+
+/**
+ * Rerank chunks using Ollama reranker model
+ * Uses Ollama's native API for local reranking inference
+ * 
+ * Recommended model: bbjson/bge-reranker-base (110M params, fast)
+ * Install: ollama pull bbjson/bge-reranker-base
+ */
+async function rerankWithOllama(
+  query: string,
+  chunks: RetrievedChunk[],
+  minScore: number
+): Promise<RetrievedChunk[]> {
+  // Get Ollama API base URL
+  const { getApiBase } = await import('./provider-helpers');
+  const apiBase = await getApiBase('ollama');
+  const ollamaUrl = (apiBase || 'http://localhost:11434').replace(/\/v1\/?$/, '');
+  
+  // Default Ollama reranker model (can be configured via env)
+  const rerankerModel = process.env.OLLAMA_RERANKER_MODEL || 'bbjson/bge-reranker-base';
+  
+  const scoredChunks: RetrievedChunk[] = [];
+  
+  // Ollama doesn't have a native rerank endpoint, so we use the generate API
+  // to score each query-document pair
+  for (const chunk of chunks) {
+    try {
+      const truncatedText = chunk.text.slice(0, 512);
+      
+      // Use Ollama generate API with a scoring prompt
+      const response = await fetch(`${ollamaUrl}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: rerankerModel,
+          prompt: `Rate the relevance of this document to the query on a scale of 0 to 1. Only respond with a number.\n\nQuery: ${query}\n\nDocument: ${truncatedText}\n\nRelevance score:`,
+          stream: false,
+          options: {
+            temperature: 0.1,
+            num_predict: 10,
+          }
+        }),
+      });
+      
+      if (!response.ok) {
+        console.warn(`[Reranker] Ollama API error for chunk: ${response.status}`);
+        continue;
+      }
+      
+      const data = await response.json() as { response: string };
+      
+      // Parse the score from the response
+      const scoreMatch = data.response?.match(/(\d+\.?\d*)/);
+      const score = scoreMatch ? parseFloat(scoreMatch[1]) : 0;
+      
+      // Clamp score to 0-1 range
+      const normalizedScore = Math.max(0, Math.min(1, score));
+      
+      if (normalizedScore >= minScore) {
+        scoredChunks.push({
+          ...chunk,
+          score: normalizedScore,
+        });
+      }
+    } catch (chunkError) {
+      console.warn('[Reranker] Error scoring chunk with Ollama:', chunkError);
+    }
+  }
+  
+  console.log(`[Reranker] Ollama scoring complete: ${scoredChunks.length} chunks passed threshold (model: ${rerankerModel})`);
+  return scoredChunks.sort((a, b) => b.score - a.score);
 }
 
 /**
@@ -409,6 +482,9 @@ export async function rerankChunks(
       console.log(`[Reranker] Trying ${providerConfig.provider}...`);
 
       switch (providerConfig.provider) {
+        case 'ollama':
+          rerankedChunks = await rerankWithOllama(query, chunksToRerank, minScore);
+          break;
         case 'bge-large':
           rerankedChunks = await rerankWithBGE(query, chunksToRerank, minScore, 'large');
           break;

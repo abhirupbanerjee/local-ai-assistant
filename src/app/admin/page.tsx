@@ -16,6 +16,11 @@ import SummarizationSettingsTab from '@/components/admin/settings/SummarizationS
 import SuperuserSettingsTab from '@/components/admin/settings/SuperuserSettings';
 import CredentialsAuthSettingsTab from '@/components/admin/settings/CredentialsAuthSettings';
 import ApiKeysSettings from '@/components/admin/settings/ApiKeysSettings';
+import RoutesSettings from '@/components/admin/settings/RoutesSettings';
+import LLMSettingsTab from '@/components/admin/settings/LLMSettings';
+import RAGSettingsTab from '@/components/admin/settings/RAGSettings';
+import EmbeddingSettingsTab from '@/components/admin/settings/EmbeddingSettings';
+import DocumentProcessingSettingsTab from '@/components/admin/settings/DocumentProcessingSettings';
 import DashboardPage from '@/components/admin/dashboard/DashboardPage';
 import UserManagement from '@/components/admin/users/UserManagement';
 import CategoriesManagement from '@/components/admin/categories/CategoriesManagement';
@@ -106,7 +111,7 @@ type DocumentsSection = 'documents' | 'acronyms';
 type UsersSection = 'management' | 'superuser' | 'credentials-auth';
 type PromptsSection = 'system-prompt' | 'category-prompts';
 type TokensSection = 'memory' | 'summarization' | 'limits';
-type SettingsSection = 'api-keys' | 'cache' | 'backup';
+type SettingsSection = 'api-keys' | 'cache' | 'backup' | 'routes' | 'llm' | 'rag' | 'embedding' | 'documents';
 
 // Legacy types for backward compatibility during migration
 type ToolsSection = 'management' | 'dependencies' | 'routing' | 'conflicts';
@@ -242,7 +247,7 @@ interface SystemStats {
   };
 }
 
-const VALID_SETTINGS_SECTIONS: SettingsSection[] = ['api-keys', 'cache', 'backup'];
+const VALID_SETTINGS_SECTIONS: SettingsSection[] = ['api-keys', 'cache', 'backup', 'routes', 'llm', 'rag', 'embedding', 'documents'];
 
 function AdminPageContent() {
   const router = useRouter();
@@ -1109,6 +1114,22 @@ function AdminPageContent() {
               {settingsSection === 'cache' && (
                 <CacheSettingsTab />
               )}
+
+              {/* Routes Section */}
+              {settingsSection === 'routes' && <RoutesSettings />}
+
+              {/* LLM Section */}
+              {settingsSection === 'llm' && <LLMSettingsTab />}
+
+              {/* RAG Section */}
+              {settingsSection === 'rag' && <RAGSettingsTab />}
+
+              {/* Embedding Section */}
+              {settingsSection === 'embedding' && <EmbeddingSettingsTab />}
+
+              {/* Document Processing Section */}
+              {settingsSection === 'documents' && <DocumentProcessingSettingsTab />}
+
               {/* Branding, Backup moved to other tabs */}
           </>
         )}

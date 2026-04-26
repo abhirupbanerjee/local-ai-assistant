@@ -286,7 +286,7 @@ export async function getBrandingSettings(): Promise<BrandingSettings> {
 
 export async function getEmbeddingSettings(): Promise<EmbeddingSettings> {
   const pg = await getSetting<EmbeddingSettings>('embedding-settings');
-  if (pg) return { ...pg, fallbackModel: pg.fallbackModel || 'text-embedding-3-large' };
+  if (pg) return { ...pg, fallbackModel: pg.fallbackModel || 'ollama-qwen3-embedding:0.6b' };
   return getDefaultEmbeddingSettings();
 }
 

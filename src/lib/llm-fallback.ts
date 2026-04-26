@@ -197,8 +197,8 @@ export function isRoute2Model(model: string): boolean {
 /**
  * Check if a model belongs to Route 3 (local / Ollama direct, air-gapped capable)
  */
-export function isRoute3Model(model: string): boolean {
-  return model.startsWith('ollama-') || model.startsWith('ollama/');
+export function isRoute3Model(model: string, providerId?: string | null): boolean {
+  return providerId === 'ollama' || model.startsWith('ollama-') || model.startsWith('ollama/');
 }
 
 // ============ Model Resolution ============
@@ -241,10 +241,10 @@ export async function buildModelsToTry(
         }
       }
     }
-    if (routesSettings.route3Enabled && !isRoute3Model(selectedModel!)) {
+    if (routesSettings.route3Enabled && !isRoute3Model(selectedModel!, selected?.providerId)) {
       const route3Fallbacks = await getActiveModels();
       for (const m of route3Fallbacks) {
-        if (isRoute3Model(m.id) && !models.includes(m.id) && isModelHealthy(m.id)) {
+        if (isRoute3Model(m.id, m.providerId) && !models.includes(m.id) && isModelHealthy(m.id)) {
           models.push(m.id);
           break; // One Ollama fallback is enough
         }
@@ -286,7 +286,7 @@ export async function buildModelsToTry(
   if (routesSettings.route3Enabled) {
     const route3Models = await getActiveModels();
     for (const m of route3Models) {
-      if (isRoute3Model(m.id) && !models.includes(m.id) && isModelHealthy(m.id)) {
+      if (isRoute3Model(m.id, m.providerId) && !models.includes(m.id) && isModelHealthy(m.id)) {
         models.push(m.id);
         break;
       }

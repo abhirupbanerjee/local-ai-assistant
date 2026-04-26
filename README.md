@@ -114,6 +114,16 @@ local-ai-assistant/
 
 ## Quick Start
 
+### Docker Compose Files Explained
+
+| File | Purpose | App Container | Usage |
+|------|---------|---------------|-------|
+| `docker-compose.local.yml` | **Local development** - infrastructure only | ❌ No | Run app with `npm run dev` |
+| `docker-compose.yml` | **Production** - full stack | ✅ Yes | Deploy with Traefik TLS |
+| `docker-compose.dev.yml` | **Development testing** - alternative infra | ❌ No | Testing/QA environments |
+
+> **Important:** `docker-compose.local.yml` does NOT build the app container. It only starts infrastructure services (Qdrant, Redis, Ollama). You run the Next.js app locally with `npm run dev`.
+
 ### Development
 
 **Important:** Start infrastructure services **before** the app to ensure the database is ready when the app initializes.
@@ -122,13 +132,20 @@ local-ai-assistant/
 # Copy environment template
 cp .env.example .env.local
 
-# 1. Start infrastructure services first (PostgreSQL, Qdrant, Redis, Ollama)
+# 1. Start infrastructure services (PostgreSQL, Qdrant, Redis, Ollama)
+# Note: Ollama requires --profile ollama flag
 docker compose -f docker-compose.local.yml --profile ollama up -d
 
-# 2. Wait for PostgreSQL to be ready (10 seconds recommended)
+# 2. Verify Ollama is running (optional)
+curl -s http://localhost:11434/api/version
+
+# Verify local models were pulled
+docker exec local-ai-assistant-ollama-local ollama list
+
+# 3. Wait for services to be ready (10 seconds recommended)
 sleep 10
 
-# 3. Install dependencies and start the app
+# 4. Install dependencies and start the app locally
 npm install && npm run dev
 ```
 
@@ -148,7 +165,7 @@ docker compose -f docker-compose.local.yml down -v
 # Configure .env with auth providers and domain
 
 # PostgreSQL + Qdrant + Ollama
-docker compose --profile qdrant --profile ollama up -d --build
+docker compose --profile postgres --profile qdrant --profile ollama up -d --build
 ```
 
 ## Infrastructure
@@ -168,10 +185,18 @@ docker compose --profile qdrant --profile ollama up -d --build
 
 ```bash
 # Local LLM (Ollama)
-OLLAMA_API_BASE=http://localhost:11434  # Or host.docker.internal
+OLLAMA_API_BASE=http://ollama:11434
+OLLAMA_MODEL=qwen3:1.7b
+OLLAMA_PULL_MODELS=qwen3:1.7b,qwen3.5:0.8b,qwen3-embedding:0.6b,bbjson/bge-reranker-base
+OLLAMA_RERANKER_MODEL=bbjson/bge-reranker-base
 
-# Database
-DATABASE_URL=postgresql://user:pass@localhost:5432/local-ai-assistant
+# Database (PostgreSQL)
+DATABASE_PROVIDER=postgres
+DATABASE_URL=postgresql://laap:password@postgres:5432/laap
+
+# Local embeddings
+EMBEDDING_MODEL=ollama-qwen3-embedding:0.6b
+EMBEDDING_DIMENSIONS=1024
 ```
 
 ### Optional
@@ -185,7 +210,8 @@ GOOGLE_CLIENT_ID=...
 TAVILY_API_KEY=...
 
 # RAG Enhancements
-COHERE_API_KEY=...                 # Or use local BGE reranker
+# Local reranking works through Ollama and BGE by default.
+COHERE_API_KEY=...                 # Optional cloud reranker
 
 # Data Source Encryption
 DATA_SOURCE_ENCRYPTION_KEY=...

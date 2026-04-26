@@ -178,6 +178,69 @@ Claude models are still registered with LiteLLM for non-chat services (embedding
 
 ---
 
+## 4. Ollama Chat 400s and Qdrant Embedding Dimension Mismatch
+
+**Status:** Fixed in request handling; reindex still required after embedding-model changes
+**Affected files:** `src/lib/openai.ts`, `src/lib/llm-client.ts`, `src/lib/llm-fallback.ts`, `src/lib/vector-store/qdrant.ts`
+**Date discovered:** 2026-04-25
+
+### Problem
+
+After switching to local Ollama models, chat streaming failed with a generic `Bad Request` error. The failure had two separate causes that appeared in the same user flow:
+
+1. Ollama chat requests were not always being treated as Ollama after model IDs were normalized.
+2. RAG search could fail before chat generation when Qdrant collections had vectors from an older embedding model.
+
+The confirmed working path now shows:
+
+```text
+[Embedding] Ollama direct — Model: qwen3-embedding:0.6b, Dimensions: 1024, Count: 1
+[Qdrant] Skipping collection global_documents: vector size mismatch (collection=3072, query=1024). Reindex documents after changing embedding models.
+[Chat] Using Ollama directly for model: ollama-gemma3
+```
+
+### Root Cause
+
+The chat path converted internal Ollama IDs such as `ollama-gemma3` to raw API model IDs such as `gemma3` before streaming. `streamOneCompletion()` then tried to infer whether the request was Ollama by checking only for `ollama-` or `ollama/`, so raw Ollama IDs could be misclassified.
+
+The OpenAI-compatible Ollama endpoint also does not accept native per-request options such as `num_ctx` in the chat completion payload. Context size must be configured through the Ollama model/server, for example with a Modelfile `PARAMETER num_ctx`.
+
+Separately, Qdrant collections preserve the vector dimension they were created with. If documents were indexed with OpenAI embeddings at 3072 dimensions and the active embedding model becomes `qwen3-embedding:0.6b` at 1024 dimensions, Qdrant returns a 400 on search.
+
+### Fix Applied
+
+Ollama chat handling:
+
+1. Added provider-aware Ollama routing using `enabled_models.provider_id === 'ollama'`, while keeping old prefix checks for `ollama-*` and `ollama/...`.
+2. Passed an explicit `isOllama` flag into `streamOneCompletion()` so the stream helper does not guess from a normalized raw model name.
+3. Removed Ollama `num_ctx` / `options` from OpenAI-compatible chat completion payloads.
+4. For Ollama final summary/text-only calls after tools, omitted `tools` and `tool_choice` instead of sending `tool_choice: 'none'`.
+
+Qdrant/RAG handling:
+
+1. Added a collection vector-size preflight before `qdrant.search()`.
+2. Skips collections whose stored vector size does not match the query embedding length.
+3. Converts Qdrant search 400s into clear warnings that identify the collection and vector sizes.
+4. Allows chat to continue with no RAG context instead of failing the whole stream.
+
+### Operational Follow-up
+
+The fix prevents the generic Bad Request from killing chat, but skipped collections are not searchable. After changing embedding models, run the reindex job so Qdrant collections are recreated with the active embedding dimension.
+
+Expected warning until reindex is complete:
+
+```text
+[Qdrant] Skipping collection <name>: vector size mismatch (collection=3072, query=1024). Reindex documents after changing embedding models.
+```
+
+### Verification
+
+`npm run type-check` passed after regenerating stale Next generated route types. `git diff --check` passed for the edited source files.
+
+Local chat with `gemma3` produced a streamed response after the fix, with RAG collections skipped because they still contain 3072-dimensional vectors.
+
+---
+
 ## Contributing to This Document
 
 When you encounter a non-obvious limitation, build issue, or framework constraint:

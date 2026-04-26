@@ -9,6 +9,8 @@ Complete documentation reference for Local AI Assistant - an enterprise RAG plat
 | Document | Description | Audience |
 |----------|-------------|----------|
 | [../README.md](../README.md) | Project overview, quick start, and setup instructions | All |
+| [SETUP-LOCAL-DESKTOP.md](SETUP-LOCAL-DESKTOP.md) | Local/desktop development setup guide | Developers, Admins |
+| [SETUP-AZURE-PRODUCTION.md](SETUP-AZURE-PRODUCTION.md) | Azure/production VM deployment guide | DevOps, Admins |
 | [tech/INFRASTRUCTURE.md](tech/INFRASTRUCTURE.md) | Docker deployment, environment setup, operations | DevOps, Admins |
 
 ---
@@ -156,6 +158,7 @@ Guides for different user roles and workflows.
 ### Deployment & Operations
 
 - [tech/INFRASTRUCTURE.md](tech/INFRASTRUCTURE.md) - Complete deployment guide
+- [tech/INFRASTRUCTURE.md § Docker Compose Files](tech/INFRASTRUCTURE.md#docker-compose-files-reference) - Docker Compose file explanations
 - [tech/INFRASTRUCTURE.md § Operations](tech/INFRASTRUCTURE.md#operations) - Monitoring, backup, updates
 - [tech/INFRASTRUCTURE.md § Troubleshooting](tech/INFRASTRUCTURE.md#troubleshooting) - Common issues
 

@@ -5,7 +5,7 @@ import type { Message, ToolCall, StreamingCallbacks, MessageVisualization, Gener
 import type { ToolExecutionRecord, FailureType } from '@/types/compliance';
 import type { ImageCapabilities } from '@/lib/config-capability-checker';
 import { getLlmSettings, getEmbeddingSettings, getLimitsSettings, getEffectiveMaxTokens, isToolCapableModelFromDb } from './db/compat/config';
-import { isModelParallelToolCapable } from './db/compat/enabled-models';
+import { getEnabledModel, isModelParallelToolCapable } from './db/compat/enabled-models';
 import { getToolDisplayName, getStreamingConfigMs } from './streaming/utils';
 import { getToolDefinitions, executeTool, REQUEST_CLARIFICATION_TOOL } from './tools';
 import { resolveToolRouting } from './tool-routing';
@@ -183,6 +183,23 @@ function isFireworksEmbeddingModel(model: string): boolean {
 }
 
 /**
+ * Check if an embedding model is from Ollama (routes direct to local Ollama server)
+ */
+function isOllamaEmbeddingModel(model: string): boolean {
+  return model.startsWith('ollama-') || model.startsWith('ollama/');
+}
+
+/**
+ * Convert internal embedding model ID to Ollama API format.
+ * e.g., "ollama-qwen3-embedding:0.6b" → "qwen3-embedding:0.6b"
+ */
+function getOllamaEmbeddingModelId(model: string): string {
+  if (model.startsWith('ollama/')) return model.slice('ollama/'.length);
+  if (model.startsWith('ollama-')) return model.slice('ollama-'.length);
+  return model;
+}
+
+/**
  * Convert internal embedding model ID to Fireworks API format.
  * Fireworks API expects `accounts/fireworks/models/<name>`.
  */
@@ -204,6 +221,21 @@ function getFireworksEmbeddingModelId(model: string): string {
  */
 export function isOllamaModel(model: string): boolean {
   return model.startsWith('ollama-') || model.startsWith('ollama/');
+}
+
+async function isOllamaModelForRouting(model: string): Promise<boolean> {
+  if (isOllamaModel(model)) return true;
+
+  try {
+    const dbModel = await getEnabledModel(model);
+    return dbModel?.providerId === 'ollama';
+  } catch (error) {
+    logger.warn('Failed to look up model provider for Ollama routing', {
+      model,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
 }
 
 /**
@@ -248,8 +280,8 @@ function getLiteLLMEmbeddingModelId(model: string): string {
 export async function createEmbedding(text: string): Promise<number[]> {
   const embeddingSettings = await getEmbeddingSettings();
   // Use database config, fall back to env var for backward compatibility
-  const model = embeddingSettings.model || process.env.EMBEDDING_MODEL || 'text-embedding-3-large';
-  const fallbackModel = embeddingSettings.fallbackModel || 'text-embedding-3-large';
+  const model = embeddingSettings.model || process.env.EMBEDDING_MODEL || 'ollama-qwen3-embedding:0.6b';
+  const fallbackModel = embeddingSettings.fallbackModel || 'ollama-qwen3-embedding:0.6b';
 
   try {
     // Route to local embeddings if local model
@@ -268,6 +300,32 @@ export async function createEmbedding(text: string): Promise<number[]> {
         totalTokens: response.usage?.total_tokens ?? Math.ceil(text.length / 4),
       });
       return response.data[0].embedding;
+    }
+
+    // Route Ollama embedding models directly (bypass LiteLLM)
+    if (isOllamaEmbeddingModel(model)) {
+      const ollamaModel = getOllamaEmbeddingModelId(model);
+      const apiBase = await getApiBase('ollama');
+      const ollamaUrl = (apiBase || 'http://localhost:11434').replace(/\/v1\/?$/, '');
+
+      // Ollama native API for embeddings
+      const response = await fetch(`${ollamaUrl}/api/embed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: ollamaModel, input: text }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Ollama embedding API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json() as { embeddings: number[][] };
+      const embedding = data.embeddings?.[0];
+      if (!embedding) {
+        throw new Error('Ollama returned no embedding');
+      }
+      console.log(`[Embedding] Ollama direct — Model: ${ollamaModel}, Dimensions: ${embedding.length}`);
+      return embedding;
     }
 
     // Cloud provider path (OpenAI, Mistral, Gemini via LiteLLM)
@@ -309,6 +367,32 @@ export async function createEmbedding(text: string): Promise<number[]> {
         return response.data[0].embedding;
       }
 
+      // Route Ollama fallback models directly (bypass LiteLLM)
+      if (isOllamaEmbeddingModel(fallbackModel)) {
+        const ollamaModel = getOllamaEmbeddingModelId(fallbackModel);
+        const apiBase = await getApiBase('ollama');
+        const ollamaUrl = (apiBase || 'http://localhost:11434').replace(/\/v1\/?$/, '');
+
+        // Ollama native API for embeddings
+        const response = await fetch(`${ollamaUrl}/api/embed`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: ollamaModel, input: text }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Ollama embedding API error (fallback): ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json() as { embeddings: number[][] };
+        const embedding = data.embeddings?.[0];
+        if (!embedding) {
+          throw new Error('Ollama fallback returned no embedding');
+        }
+        console.log(`[Embedding] Ollama fallback — Model: ${ollamaModel}, Dimensions: ${embedding.length}`);
+        return embedding;
+      }
+
       const openai = await getOpenAI();
       const litellmModel = getLiteLLMEmbeddingModelId(fallbackModel);
       const response = await openai.embeddings.create({
@@ -328,8 +412,8 @@ export async function createEmbeddings(texts: string[]): Promise<number[][]> {
 
   const embeddingSettings = await getEmbeddingSettings();
   // Use database config, fall back to env var for backward compatibility
-  const model = embeddingSettings.model || process.env.EMBEDDING_MODEL || 'text-embedding-3-large';
-  const fallbackModel = embeddingSettings.fallbackModel || 'text-embedding-3-large';
+  const model = embeddingSettings.model || process.env.EMBEDDING_MODEL || 'ollama-qwen3-embedding:0.6b';
+  const fallbackModel = embeddingSettings.fallbackModel || 'ollama-qwen3-embedding:0.6b';
 
   try {
     // Route to local embeddings if local model
@@ -355,6 +439,31 @@ export async function createEmbeddings(texts: string[]): Promise<number[][]> {
       });
       if (embeddings.length > 0) {
         console.log(`[Embedding] Fireworks direct — Model: ${fwModel}, Dimensions: ${embeddings[0].length}, Count: ${embeddings.length}`);
+      }
+      return embeddings;
+    }
+
+    // Route Ollama embedding models directly (bypass LiteLLM)
+    if (isOllamaEmbeddingModel(model)) {
+      const ollamaModel = getOllamaEmbeddingModelId(model);
+      const apiBase = await getApiBase('ollama');
+      const ollamaUrl = (apiBase || 'http://localhost:11434').replace(/\/v1\/?$/, '');
+
+      // Ollama native API for batch embeddings
+      const response = await fetch(`${ollamaUrl}/api/embed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: ollamaModel, input: texts }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Ollama embedding API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json() as { embeddings: number[][] };
+      const embeddings = data.embeddings || [];
+      if (embeddings.length > 0) {
+        console.log(`[Embedding] Ollama direct — Model: ${ollamaModel}, Dimensions: ${embeddings[0].length}, Count: ${embeddings.length}`);
       }
       return embeddings;
     }
@@ -403,6 +512,31 @@ export async function createEmbeddings(texts: string[]): Promise<number[][]> {
         return response.data.map(d => d.embedding);
       }
 
+      // Route Ollama fallback models directly (bypass LiteLLM)
+      if (isOllamaEmbeddingModel(fallbackModel)) {
+        const ollamaModel = getOllamaEmbeddingModelId(fallbackModel);
+        const apiBase = await getApiBase('ollama');
+        const ollamaUrl = (apiBase || 'http://localhost:11434').replace(/\/v1\/?$/, '');
+
+        // Ollama native API for batch embeddings
+        const response = await fetch(`${ollamaUrl}/api/embed`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: ollamaModel, input: texts }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Ollama embedding API error (fallback): ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json() as { embeddings: number[][] };
+        const embeddings = data.embeddings || [];
+        if (embeddings.length > 0) {
+          console.log(`[Embedding] Ollama fallback — Model: ${ollamaModel}, Dimensions: ${embeddings[0].length}, Count: ${embeddings.length}`);
+        }
+        return embeddings;
+      }
+
       const openai = await getOpenAI();
       const litellmModel = getLiteLLMEmbeddingModelId(fallbackModel);
       const response = await openai.embeddings.create({
@@ -448,7 +582,7 @@ export async function generateResponse(
     content: `Organizational Knowledge Base:\n${context}\n\n---\n\nQuestion: ${userMessage}`,
   });
 
-  const isOllama = isOllamaModel(llmSettings.model);
+  const isOllama = await isOllamaModelForRouting(llmSettings.model);
   const openai = isOllama ? await getOllamaClient() : await getOpenAI();
 
   // Get effective max tokens (uses per-model override if configured, otherwise preset default)
@@ -459,7 +593,6 @@ export async function generateResponse(
     messages,
     max_tokens: effectiveMaxTokens,
     temperature: llmSettings.temperature,
-    ...(isOllama && { num_ctx: OLLAMA_NUM_CTX }),
   } as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming);
 
   return response.choices[0].message.content || '';
@@ -475,9 +608,9 @@ const FIRST_CHUNK_TIMEOUT_MS = 120_000;        // 2 min: cloud models
 const FIRST_CHUNK_TIMEOUT_OLLAMA_MS = 180_000; // 3 min: Ollama (CPU cold-start)
 // Inter-chunk timeout now loaded from DB via getStreamingConfigMs() (default 120s)
 
-// Ollama per-request context window — overrides server-level OLLAMA_CONTEXT_LENGTH.
-// Default 16384 balances capacity with memory on 4GB+ systems.
-const OLLAMA_NUM_CTX = parseInt(process.env.OLLAMA_NUM_CTX || '16384', 10);
+// Ollama's OpenAI-compatible /v1/chat/completions endpoint does not support
+// per-request native options such as num_ctx. Configure context size through
+// the Ollama model/server instead (for example, a Modelfile PARAMETER num_ctx).
 
 // Tools safe for Ollama: no external API keys required, generate output locally
 const OLLAMA_ALLOWED_TOOLS = new Set([
@@ -742,6 +875,7 @@ async function streamOneCompletion(
   params: Omit<OpenAI.Chat.ChatCompletionCreateParamsStreaming, 'stream'>,
   onChunk?: (text: string) => void,
   onThinkingChunk?: (text: string) => void,
+  options: { isOllama?: boolean } = {},
 ): Promise<{ content: string | null; tool_calls: OpenAI.Chat.ChatCompletionMessageFunctionToolCall[] | undefined; thinkingContent: string | null; totalTokens: number }> {
   const controller = new AbortController();
   // OpenAI SDK v6+ silently swallows AbortError in its stream iterator
@@ -753,7 +887,7 @@ async function streamOneCompletion(
   const interChunkTimeoutMs = streamingConfig.TOOL_TIMEOUT_MS;
 
   // Ollama models get a longer first-chunk timeout for CPU cold-start
-  const isOllama = params.model?.startsWith('ollama-') || params.model?.startsWith('ollama/');
+  const isOllama = options.isOllama ?? isOllamaModel(params.model ?? '');
   const firstChunkTimeout = isOllama ? FIRST_CHUNK_TIMEOUT_OLLAMA_MS : FIRST_CHUNK_TIMEOUT_MS;
 
   // Start with first-chunk timeout; reset to inter-chunk on each received chunk
@@ -781,7 +915,11 @@ async function streamOneCompletion(
 
   try {
     const stream = await openai.chat.completions.create(
-      { ...params, stream: true, stream_options: { include_usage: true } },
+      {
+        ...params,
+        stream: true,
+        ...(isOllama ? {} : { stream_options: { include_usage: true } }),
+      },
       { signal: controller.signal },
     );
 
@@ -889,7 +1027,7 @@ export async function generateResponseWithTools(
   // Detect direct-route models — bypass LiteLLM
   const useAnthropicDirect = isClaudeModel(effectiveModel);
   const useFireworksDirect = isFireworksModel(effectiveModel);
-  const useOllamaDirect = isOllamaModel(effectiveModel);
+  const useOllamaDirect = await isOllamaModelForRouting(effectiveModel);
   const routeLabel = useAnthropicDirect ? 'Anthropic SDK directly'
     : useFireworksDirect ? 'Fireworks AI directly'
     : useOllamaDirect ? 'Ollama directly'
@@ -1151,7 +1289,7 @@ export async function generateResponseWithTools(
 
   // Ollama small models can't reliably handle most tools and the tool definitions
   // consume thousands of tokens. Keep only local-generation tools that don't need external APIs.
-  const isOllama = isOllamaModel(effectiveModel);
+  const isOllama = useOllamaDirect;
   let effectiveToolChoice = toolChoice;
   if (isOllama) {
     if (tools?.length) {
@@ -1171,7 +1309,7 @@ export async function generateResponseWithTools(
     }
     logger.info('Ollama context configured', {
       model: effectiveModel,
-      num_ctx: OLLAMA_NUM_CTX,
+      context: 'Configure Ollama context size via model/server settings, not OpenAI-compatible request options.',
       max_tokens: effectiveMaxTokens,
     });
   }
@@ -1195,7 +1333,6 @@ export async function generateResponseWithTools(
     tool_choice: tools?.length ? effectiveToolChoice : undefined,
     max_tokens: effectiveMaxTokens,
     temperature: llmSettings.temperature,
-    ...(isOllama && { num_ctx: OLLAMA_NUM_CTX }),
   } as Omit<OpenAI.Chat.ChatCompletionCreateParamsStreaming, 'stream'>;
 
   // First API call — streaming so content tokens are forwarded via onChunk if no tool calls
@@ -1220,7 +1357,7 @@ export async function generateResponseWithTools(
     responseMessage = anthropicResult;
     accumulatedTokens += anthropicResult.totalTokens;
   } else {
-    responseMessage = await streamOneCompletion(openai!, completionParams, callbacks?.onChunk, callbacks?.onThinkingChunk);
+    responseMessage = await streamOneCompletion(openai!, completionParams, callbacks?.onChunk, callbacks?.onThinkingChunk, { isOllama: useOllamaDirect });
     accumulatedTokens += responseMessage.totalTokens;
   }
 
@@ -1620,6 +1757,7 @@ export async function generateResponseWithTools(
         },
         callbacks?.onChunk,
         callbacks?.onThinkingChunk,
+        { isOllama: useOllamaDirect },
       );
       accumulatedTokens += responseMessage.totalTokens;
     }
@@ -1658,11 +1796,14 @@ export async function generateResponseWithTools(
           messages: finalMessages,
           max_tokens: completionParams.max_tokens,
           temperature: completionParams.temperature,
-          tools: completionParams.tools,
-          tool_choice: 'none',
+          ...(useOllamaDirect ? {} : {
+            tools: completionParams.tools,
+            tool_choice: 'none' as const,
+          }),
         },
         callbacks?.onChunk,
         callbacks?.onThinkingChunk,
+        { isOllama: useOllamaDirect },
       );
       accumulatedTokens += responseMessage.totalTokens;
     }
@@ -1711,11 +1852,14 @@ export async function generateResponseWithTools(
           messages: summaryMessages,
           max_tokens: completionParams.max_tokens,
           temperature: completionParams.temperature,
-          tools: completionParams.tools,
-          tool_choice: 'none',
+          ...(useOllamaDirect ? {} : {
+            tools: completionParams.tools,
+            tool_choice: 'none' as const,
+          }),
         },
         callbacks?.onChunk,
         callbacks?.onThinkingChunk,
+        { isOllama: useOllamaDirect },
       );
       responseMessage = summaryResponse;
       accumulatedTokens += summaryResponse.totalTokens;

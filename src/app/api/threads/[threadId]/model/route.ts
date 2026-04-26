@@ -4,8 +4,26 @@ import { getThread } from '@/lib/threads';
 import { updateThreadModel, getEffectiveModelForThread, getThreadById } from '@/lib/db/compat';
 import { getActiveModels, getDefaultModel, getEnabledModel } from '@/lib/db/compat/enabled-models';
 import { getRoutesSettings } from '@/lib/db/compat/config';
-import { isRoute2Model, isRoute3Model } from '@/lib/llm-fallback';
 import type { ApiError } from '@/types';
+
+/**
+ * Determine which route a model belongs to based on provider_id.
+ * Route 3: ollama, ollama-cloud (local/cloud Ollama infrastructure)
+ * Route 2: anthropic, fireworks, claude (direct cloud providers)
+ * Route 1: all others (LiteLLM/OpenAI route)
+ */
+function getModelRoute(providerId: string): 'route1' | 'route2' | 'route3' {
+  // Route 3: Ollama infrastructure (local or cloud)
+  if (providerId === 'ollama' || providerId === 'ollama-cloud') {
+    return 'route3';
+  }
+  // Route 2: Direct cloud providers (bypass LiteLLM)
+  if (providerId === 'anthropic' || providerId === 'fireworks') {
+    return 'route2';
+  }
+  // Route 1: LiteLLM/OpenAI route (default)
+  return 'route1';
+}
 
 interface RouteParams {
   params: Promise<{ threadId: string }>;
@@ -45,8 +63,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const allModels = await getActiveModels();
     const routesSettings = await getRoutesSettings();
     const availableModels = allModels.filter(m => {
-      if (isRoute3Model(m.id)) return routesSettings.route3Enabled;
-      if (isRoute2Model(m.id)) return routesSettings.route2Enabled;
+      // Use provider_id for accurate route determination
+      const route = getModelRoute(m.providerId);
+      if (route === 'route3') return routesSettings.route3Enabled;
+      if (route === 'route2') return routesSettings.route2Enabled;
       return routesSettings.route1Enabled;
     });
 

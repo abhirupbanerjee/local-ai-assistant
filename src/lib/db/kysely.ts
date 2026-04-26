@@ -322,6 +322,33 @@ async function runPostgresMigrations(database: Kysely<DB>): Promise<void> {
   await sql`ALTER TABLE enabled_models ADD COLUMN IF NOT EXISTS thinking_capable INTEGER DEFAULT 0`.execute(database);
   console.log('[Kysely] Ensured parallel_tool_capable and thinking_capable columns exist');
 
+  // Migration: Add is_cloud column to enabled_models for Ollama Cloud models
+  await sql`ALTER TABLE enabled_models ADD COLUMN IF NOT EXISTS is_cloud INTEGER DEFAULT 0`.execute(database);
+  console.log('[Kysely] Ensured is_cloud column exists in enabled_models');
+
+  // Migration: Seed ollama-cloud provider if not exists
+  await database
+    .insertInto('llm_providers')
+    .values({
+      id: 'ollama-cloud',
+      name: 'Ollama Cloud',
+      api_key: process.env['OLLAMA_API_KEY'] || null,
+      api_base: null,
+      enabled: 1,
+    })
+    .onConflict(oc => oc.column('id').doNothing())
+    .execute();
+  console.log('[Kysely] Ensured ollama-cloud provider exists');
+
+  // Migration: Enable all existing ollama-cloud models (previously synced with enabled=0)
+  await database
+    .updateTable('enabled_models')
+    .set({ enabled: 1 })
+    .where('provider_id', '=', 'ollama-cloud')
+    .where('is_cloud', '=', 1)
+    .execute();
+  console.log('[Kysely] Enabled all existing Ollama Cloud models');
+
   console.log('[Kysely] PostgreSQL migrations completed');
 
   // Fire-and-forget: initialize automated backup scheduler

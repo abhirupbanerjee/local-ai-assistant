@@ -285,7 +285,7 @@ export const cookieAuditTool: ToolDefinition = {
       // Fetch the URL
       const response = await fetch(args.url, {
         redirect: settings.followRedirects ? 'follow' : 'manual',
-        headers: { 'User-Agent': 'PolicyBot-CookieAudit/1.0' },
+        headers: { 'User-Agent': 'LaaP-CookieAudit/1.0' },
       });
 
       const finalUrl = response.url || args.url;

@@ -55,7 +55,7 @@ async function pollSslLabs(
   maxWaitSeconds: number,
   email: string
 ): Promise<Record<string, unknown>> {
-  const headers = { 'User-Agent': 'PolicyBot-SSLScan/1.0', email };
+  const headers = { 'User-Agent': 'LaaP-SSLScan/1.0', email };
 
   const triggerRes = await fetch(
     `${SSL_LABS_API}?host=${encodeURIComponent(hostname)}&all=done`,

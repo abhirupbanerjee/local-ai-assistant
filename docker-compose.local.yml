@@ -14,7 +14,8 @@
 # With Ollama: docker compose -f docker-compose.local.yml --profile ollama up -d
 #
 # Make sure your .env.local has:
-#   DATABASE_PROVIDER=sqlite
+#   DATABASE_PROVIDER=postgres  (or sqlite)
+#   DATABASE_URL=postgresql://laap:laap-local-password@localhost:5432/laap
 #   QDRANT_HOST=localhost
 #   REDIS_URL=redis://localhost:6379
 #   OLLAMA_API_BASE=http://localhost:11434
@@ -61,11 +62,32 @@ services:
       timeout: 10s
       retries: 3
 
+  # PostgreSQL Database
+  # For local development with DATABASE_PROVIDER=postgres
+  postgres:
+    image: postgres:16-alpine
+    container_name: laap-postgres-local
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-laap}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-laap-local-password}
+      POSTGRES_DB: ${POSTGRES_DB:-laap}
+    volumes:
+      - laap-pgdata-local:/var/lib/postgresql/data
+      - ./src/lib/db/schema/postgres.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-laap}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Ollama Local LLM Server
   # Start with: docker compose -f docker-compose.local.yml --profile ollama up -d
-  # Models: gemma3:latest, gemma4:2b, qwen2.5:2b
+  # Models: qwen3:1.7b, qwen3.5:0.8b, qwen3-embedding:0.6b, bbjson/bge-reranker-base
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.21.2
     container_name: local-ai-assistant-ollama-local
     profiles:
       - ollama
@@ -77,12 +99,12 @@ services:
       - ./scripts/ollama-entrypoint.sh:/ollama-entrypoint.sh:ro
     environment:
       # Default model to pre-load
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma3:latest}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:1.7b}
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-5m}
       - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-2}
       - OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH:-8192}
-      # Pull additional models on startup
-      - OLLAMA_PULL_MODELS=${OLLAMA_PULL_MODELS:-gemma4:2b,qwen2.5:2b}
+      # Pull additional models on startup (includes embedding model for RAG)
+      - OLLAMA_PULL_MODELS=${OLLAMA_PULL_MODELS:-qwen3:1.7b,qwen3.5:0.8b,qwen3-embedding:0.6b,bbjson/bge-reranker-base}
     deploy:
       resources:
         limits:
@@ -95,7 +117,7 @@ services:
       start_period: 120s
 
 volumes:
-  local-ai-assistant-pgdata-local:
-    name: local-ai-assistant-pgdata-local
+  laap-pgdata-local:
+    name: laap-pgdata-local
   ollama-models-local:
     name: local-ai-assistant-ollama-models-local

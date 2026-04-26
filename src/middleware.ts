@@ -1,6 +1,8 @@
 import { getToken } from 'next-auth/jwt';
 import { NextRequest, NextResponse } from 'next/server';
 
+const AUTH_DISABLED = process.env.AUTH_DISABLED === 'true';
+
 export default async function middleware(req: NextRequest) {
   // Embed routes: set runtime CSP with allowed frame-ancestors, skip auth
   if (req.nextUrl.pathname.startsWith('/e/')) {
@@ -22,6 +24,15 @@ export default async function middleware(req: NextRequest) {
       `frame-ancestors ${frameAncestors}`,
     ].join('; '));
     return response;
+  }
+
+  // If auth is disabled, allow all access (except landing page redirect for consistency)
+  if (AUTH_DISABLED) {
+    // Landing page: still redirect to /chat for better UX
+    if (req.nextUrl.pathname === '/') {
+      return NextResponse.redirect(new URL('/chat', req.url));
+    }
+    return NextResponse.next();
   }
 
   // Landing page: authenticated users → /chat, unauthenticated → show landing

@@ -55,7 +55,7 @@ export default function BrandingSettingsTab() {
       const data = await res.json();
 
       const brandingData = data.branding || {
-        botName: 'Policy Bot',
+        botName: 'Local AI Assistant Platform',
         botIcon: 'policy',
         subtitle: '',
         welcomeTitle: '',

@@ -714,55 +714,66 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(function 
           )}
         </div>
 
-        {/* Footer with user info and admin link */}
-        <div className="border-t p-4 space-y-2">
-          {isAdmin && (
-            <Link
-              href="/admin"
-              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <Settings size={16} />
-              Admin Dashboard
-            </Link>
-          )}
-          {isSuperUser && (
-            <Link
-              href="/superuser"
-              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <Settings size={16} />
-              Manage
-            </Link>
-          )}
-          {session?.user && (
+        {/* Footer Menu Box */}
+        <div className="border-t bg-gray-50 p-3 space-y-1 shrink-0">
+          {/* Menu Items */}
+          <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+            {isAdmin && (
+              <Link
+                href="/admin"
+                className="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-0"
+              >
+                <Settings size={16} className="text-gray-500" />
+                <span>Admin Dashboard</span>
+              </Link>
+            )}
+            {isSuperUser && (
+              <Link
+                href="/superuser"
+                className="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-0"
+              >
+                <Settings size={16} className="text-gray-500" />
+                <span>Manage</span>
+              </Link>
+            )}
+            {/* Settings - available to all users */}
             <Link
               href="/profile"
-              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              className="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-b border-gray-100"
             >
-              <Brain size={16} />
-              Your Memory
+              <Settings size={16} className="text-gray-500" />
+              <span>Settings</span>
             </Link>
-          )}
+            {/* Memory */}
+            <Link
+              href="/profile"
+              className="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-b border-gray-100"
+            >
+              <Brain size={16} className="text-gray-500" />
+              <span>Memory</span>
+            </Link>
+            {/* Logout */}
+            <button
+              onClick={() => signOut({ callbackUrl: '/auth/signin' })}
+              className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              <LogOut size={16} className="text-gray-500" />
+              <span>Logout</span>
+            </button>
+          </div>
+
+          {/* User Info */}
           {session?.user && (
-            <div className="flex items-center justify-between px-3 py-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-medium text-sm shrink-0">
-                  {session.user.name?.[0] || session.user.email?.[0]?.toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
-                    {session.user.name || session.user.email?.split('@')[0]}
-                  </p>
-                  <p className="text-xs text-gray-500 truncate">{session.user.email}</p>
-                </div>
+            <div className="flex items-center gap-2 px-2 py-2">
+              <div className="w-7 h-7 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-medium text-xs shrink-0">
+                {session.user.name?.[0] || session.user.email?.[0]?.toUpperCase()}
               </div>
-              <button
-                onClick={() => signOut({ callbackUrl: '/auth/signin' })}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
-                title="Sign out"
-              >
-                <LogOut size={16} />
-              </button>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium text-gray-900 truncate">
+                  {session.user.name || session.user.email?.split('@')[0]}
+                </p>
+                <p className="text-[10px] text-gray-500 truncate">{session.user.email}</p>
+              </div>
             </div>
           )}
         </div>

@@ -177,9 +177,9 @@ EMBEDDING_DIMENSIONS=1024
 RERANKER_MODEL=BAAI/bge-reranker-v2-m3
 
 # PostgreSQL (always required)
-POSTGRES_USER=localaiassistant
+POSTGRES_USER=laap
 POSTGRES_PASSWORD=your-strong-password
-POSTGRES_DB=localaiassistant
+POSTGRES_DB=laap
 
 # Vector store provider
 VECTOR_STORE_PROVIDER=qdrant
@@ -341,13 +341,42 @@ Qdrant is the vector store for all deployments. It provides advanced payload fil
 
 ---
 
+## Docker Compose Files Reference
+
+Local AI Assistant provides multiple Docker Compose files for different deployment scenarios:
+
+| File | Purpose | Services | App Container |
+|------|---------|----------|---------------|
+| `docker-compose.local.yml` | **Local development** | Qdrant, Redis, Ollama (profile) | ❌ No - run with `npm run dev` |
+| `docker-compose.yml` | **Production** | Traefik, App, Redis, Postgres, Qdrant, Ollama (profiles) | ✅ Yes |
+| `docker-compose.dev.yml` | **Development testing** | Qdrant, Redis, Postgres | ❌ No |
+
+### Key Differences
+
+**docker-compose.local.yml (Local Development)**
+- Exposes ports to localhost (6333, 6379, 11434)
+- No app container - you run `npm run dev` locally
+- Ollama behind `--profile ollama` flag
+- Uses SQLite by default (no Postgres)
+
+**docker-compose.yml (Production)**
+- Full stack with Traefik reverse proxy
+- Automatic TLS via Let's Encrypt
+- All services on internal Docker network
+- PostgreSQL and Qdrant behind profiles
+
+**docker-compose.dev.yml (Development Testing)**
+- Alternative infrastructure setup
+- Includes PostgreSQL with local port exposure
+- For testing/QA environments
+
 ## Local Development Setup
 
 ### Prerequisites
 
 - Node.js 20+
 - Docker & Docker Compose
-- Ollama installed locally (for local LLM)
+- (Optional) Ollama installed locally, or use Docker with `--profile ollama`
 
 ### Steps
 
@@ -364,17 +393,23 @@ cp .env.example .env.local
 # Edit .env.local - ensure OLLAMA_API_BASE is set
 
 # 4. Start infrastructure services
-docker compose -f docker-compose.local.yml up -d
+# IMPORTANT: Ollama requires --profile ollama flag
+docker compose -f docker-compose.local.yml --profile ollama up -d
 
-# 5. Wait for services to be healthy
+# 5. Verify Ollama is running (optional)
+curl -s http://localhost:11434/api/version
+
+# 6. Wait for services to be healthy
 docker compose -f docker-compose.local.yml ps
 
-# 6. Start development server
+# 7. Start development server
 npm run dev
 
-# 7. Open browser
+# 8. Open browser
 # http://localhost:3000
 ```
+
+> **Note:** If you omit `--profile ollama`, only Qdrant and Redis will start. Ollama won't be available unless you have it installed natively on your system.
 
 ### Useful Commands
 
@@ -507,7 +542,7 @@ docker compose logs -f app
 docker compose logs -f
 
 # Database size (PostgreSQL)
-docker exec local-ai-assistant-postgres psql -U localaiassistant -c "SELECT pg_size_pretty(pg_database_size('localaiassistant'));"
+docker exec local-ai-assistant-postgres psql -U laap -c "SELECT pg_size_pretty(pg_database_size('laap'));"
 
 # Vector store data size
 du -sh data/qdrant/

@@ -367,6 +367,21 @@ function getHardcodedDefaults(): AppConfig {
         cacheEnabled: true,
         cacheTTLSeconds: 3600,
       },
+      'qwen3:1.7b': {
+        name: 'Ollama Qwen3 1.7B (Local)',
+        description: 'Small, fast local model with tool calling and thinking support',
+        provider: 'ollama',
+        temperature: 0.2,
+        maxTokens: 2000,
+        topKChunks: 15,
+        maxContextChunks: 10,
+        similarityThreshold: 0.5,
+        chunkSize: 1200,
+        chunkOverlap: 200,
+        queryExpansionEnabled: true,
+        cacheEnabled: true,
+        cacheTTLSeconds: 3600,
+      },
       'ollama-gemma4:2b': {
         name: 'Ollama Gemma 4:2b (Local)',
         description: "Google's Gemma 4 2B model - efficient with strong reasoning",
@@ -428,9 +443,9 @@ function getHardcodedDefaults(): AppConfig {
         cacheTTLSeconds: 3600,
       },
     },
-    defaultPreset: 'ollama-gemma3:latest',
+    defaultPreset: 'qwen3:1.7b',
     llm: {
-      model: 'ollama-gemma3:latest',
+      model: 'qwen3:1.7b',
       temperature: 0.2,
       maxTokens: 2000,
       promptOptimizationMaxTokens: 2000,
@@ -446,8 +461,9 @@ function getHardcodedDefaults(): AppConfig {
       cacheTTLSeconds: 3600,
     },
     embedding: {
-      model: 'text-embedding-3-large',
-      dimensions: 3072,
+      model: 'ollama-qwen3-embedding:0.6b',
+      dimensions: 1024,
+      fallbackModel: 'ollama-qwen3-embedding:0.6b',
     },
     reranker: {
       enabled: false,
@@ -506,7 +522,7 @@ function getHardcodedDefaults(): AppConfig {
         'gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano',
         'mistral-large-3', 'mistral-medium-3.1', 'mistral-small-3.2',
         'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite',
-        'ollama-llama3.2', 'ollama-qwen3', 'ollama-gpt-oss',
+        'ollama-llama3.2', 'ollama-qwen3', 'qwen3:1.7b', 'ollama-gpt-oss',
         'ollama-gemma3:latest', 'ollama-gemma4:2b', 'ollama-qwen2.5:2b',
         'claude-haiku-4-5-20251001', 'fireworks/minimax-m2p5',
       ],
@@ -732,7 +748,7 @@ export function getDefaultLLMModel(): string {
  */
 export function getDefaultEmbeddingModel(): string {
   const config = loadConfig();
-  return config.embedding?.model || 'text-embedding-3-large';
+  return config.embedding?.model || 'ollama-qwen3-embedding:0.6b';
 }
 
 /**

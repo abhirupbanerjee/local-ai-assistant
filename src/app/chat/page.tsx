@@ -17,7 +17,7 @@ export default function Home() {
   const sidebarRef = useRef<ThreadSidebarRef>(null);
   const [activeThread, setActiveThread] = useState<Thread | null>(null);
   const [userSubscriptions, setUserSubscriptions] = useState<UserSubscription[]>([]);
-  const [brandingName, setBrandingName] = useState<string>('Policy Bot');
+  const [brandingName, setBrandingName] = useState<string>('Local AI Assistant Platform');
 
   // Artifacts state (lifted from ChatWindow)
   const [artifactsData, setArtifactsData] = useState<{
@@ -49,7 +49,7 @@ export default function Home() {
         const brandingResponse = await fetch('/api/branding');
         if (brandingResponse.ok) {
           const brandingData = await brandingResponse.json();
-          setBrandingName(brandingData.botName || 'Policy Bot');
+          setBrandingName(brandingData.botName || 'Local AI Assistant Platform');
         }
       } catch (err) {
         console.error('Failed to load user data:', err);

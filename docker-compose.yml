@@ -64,13 +64,14 @@ services:
       - QDRANT_PORT=6333
       # Database Configuration
       - DATABASE_PROVIDER=${DATABASE_PROVIDER:-sqlite}
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-local-ai-assistant}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-local-ai-assistant}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-laap}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-laap}
       # Other Services
       - REDIS_URL=redis://redis:6379
       - DATA_DIR=/app/data
       - CONFIG_DIR=/app/config
       # Ollama for local LLM (direct, no LiteLLM)
       - OLLAMA_API_BASE=${OLLAMA_API_BASE:-http://ollama:11434}
+      - OLLAMA_RERANKER_MODEL=${OLLAMA_RERANKER_MODEL:-bbjson/bge-reranker-base}
       # Fix transformers cache permission (reranker model caching)
       - TRANSFORMERS_CACHE=/tmp/transformers_cache
       - XDG_CACHE_HOME=/tmp/cache
@@ -140,15 +141,15 @@ services:
     profiles:
       - postgres
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-local-ai-assistant}
+      POSTGRES_USER: ${POSTGRES_USER:-laap}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-local-ai-assistant}
+      POSTGRES_DB: ${POSTGRES_DB:-laap}
     volumes:
       - local-ai-assistant-pgdata:/var/lib/postgresql/data
       # Auto-run on first init (only executes once when DB is created)
       - ./src/lib/db/schema/postgres.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-local-ai-assistant}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-laap}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -172,9 +173,9 @@ services:
 
   # Ollama Local LLM Server
   # Start with: docker compose --profile ollama up -d
-  # Models: gemma3:latest, gemma4:2b, qwen2.5:2b
+  # Models: qwen3:1.7b, qwen3.5:0.8b, qwen3-embedding:0.6b, bbjson/bge-reranker-base
   ollama:
-    image: ollama/ollama:0.18.2
+    image: ollama/ollama:0.21.2
     container_name: local-ai-assistant-ollama
     profiles:
       - ollama
@@ -184,12 +185,12 @@ services:
       - ./scripts/ollama-entrypoint.sh:/ollama-entrypoint.sh:ro
     environment:
       # Default models to pre-load
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma3:latest}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:1.7b}
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-5m}
       - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-2}
       - OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH:-8192}
-      # Pull additional models on startup
-      - OLLAMA_PULL_MODELS=${OLLAMA_PULL_MODELS:-gemma4:2b,qwen2.5:2b}
+      # Pull additional models on startup (includes embedding model for RAG)
+      - OLLAMA_PULL_MODELS=${OLLAMA_PULL_MODELS:-qwen3:1.7b,qwen3.5:0.8b,qwen3-embedding:0.6b,bbjson/bge-reranker-base}
     deploy:
       resources:
         limits:
