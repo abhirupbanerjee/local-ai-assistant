@@ -15,6 +15,13 @@ dist/
 .env.preprod
 .env.prod
 .env*.local
+.env.azure.example
+.env.azure
+
+#ai
+.codex
+.claude
+
 
 # Debug
 npm-debug.log*
