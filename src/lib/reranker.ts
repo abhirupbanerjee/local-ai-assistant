@@ -80,7 +80,7 @@ async function rerankWithCohere(
   query: string,
   chunks: RetrievedChunk[],
   minScore: number
-): Promise<RetrievedChunk[]> {
+): Promise<RetrievedChunk[] | null> {
   try {
     const client = await getCohereClient();
 
@@ -99,11 +99,17 @@ async function rerankWithCohere(
         score: result.relevanceScore,
       }));
 
+    // If no chunks passed threshold, return null to trigger fallback to next provider
+    if (rerankedChunks.length === 0) {
+      console.warn(`[Reranker] Cohere returned 0 valid chunks, will try next provider`);
+      return null;
+    }
+
     return rerankedChunks.sort((a, b) => b.score - a.score);
   } catch (error) {
     console.error('[Reranker] Cohere error:', error);
-    // Fallback to original chunks on error
-    return chunks;
+    // Return null on error to trigger fallback
+    return null;
   }
 }
 
@@ -118,7 +124,7 @@ async function rerankWithOllama(
   query: string,
   chunks: RetrievedChunk[],
   minScore: number
-): Promise<RetrievedChunk[]> {
+): Promise<RetrievedChunk[] | null> {
   // Get Ollama API base URL
   const { getApiBase } = await import('./provider-helpers');
   const apiBase = await getApiBase('ollama');
@@ -175,7 +181,14 @@ async function rerankWithOllama(
     }
   }
   
-  console.log(`[Reranker] Ollama scoring complete: ${scoredChunks.length} chunks passed threshold (model: ${rerankerModel})`);
+      console.log(`[Reranker] Ollama scoring complete: ${scoredChunks.length} chunks passed threshold (model: ${rerankerModel})`);
+  
+  // If no chunks passed threshold, return null to trigger fallback to next provider
+  if (scoredChunks.length === 0) {
+    console.warn(`[Reranker] Ollama returned 0 valid chunks, will try next provider`);
+    return null;
+  }
+  
   return scoredChunks.sort((a, b) => b.score - a.score);
 }
 
@@ -187,7 +200,7 @@ async function rerankWithFireworks(
   query: string,
   chunks: RetrievedChunk[],
   minScore: number
-): Promise<RetrievedChunk[]> {
+): Promise<RetrievedChunk[] | null> {
   const apiKey = await getApiKey('fireworks');
   if (!apiKey) {
     throw new Error('Fireworks API key not configured. Set in Settings > Providers or FIREWORKS_AI_API_KEY environment variable.');
@@ -235,7 +248,7 @@ async function rerankWithLocal(
   query: string,
   chunks: RetrievedChunk[],
   minScore: number
-): Promise<RetrievedChunk[]> {
+): Promise<RetrievedChunk[] | null> {
   try {
     // Dynamic import for @xenova/transformers
     const { pipeline, env, cos_sim } = await import('@xenova/transformers');
@@ -334,7 +347,7 @@ async function rerankWithBGE(
   chunks: RetrievedChunk[],
   minScore: number,
   variant: 'large' | 'base' = 'large'
-): Promise<RetrievedChunk[]> {
+): Promise<RetrievedChunk[] | null> {
   const { pipeline, env } = await import('@xenova/transformers');
 
   // Configure cache directory
@@ -391,6 +404,13 @@ async function rerankWithBGE(
   }
 
   console.log(`[Reranker] BGE ${variant} scoring complete: ${scoredChunks.length} chunks passed threshold`);
+  
+  // If no chunks passed threshold, return null to trigger fallback to next provider
+  if (scoredChunks.length === 0) {
+    console.warn(`[Reranker] BGE ${variant} returned 0 valid chunks, will try next provider`);
+    return null;
+  }
+  
   return scoredChunks.sort((a, b) => b.score - a.score);
 }
 

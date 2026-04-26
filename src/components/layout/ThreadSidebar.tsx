@@ -97,27 +97,32 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(function 
   const [availableCategories, setAvailableCategories] = useState<{id: number; name: string}[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Section collapse state with localStorage persistence
-  const [favoritesCollapsed, setFavoritesCollapsed] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('sidebar-favorites-collapsed') === 'true';
+  // Section collapse state - default values for SSR to avoid hydration mismatch
+  const [favoritesCollapsed, setFavoritesCollapsed] = useState(false);
+  const [othersCollapsed, setOthersCollapsed] = useState(false);
+  const [collapsedDateGroups, setCollapsedDateGroups] = useState<Record<string, boolean>>({});
+
+  // Load persisted state from localStorage after mount (client-side only)
+  useEffect(() => {
+    const storedFavorites = localStorage.getItem('sidebar-favorites-collapsed');
+    if (storedFavorites === 'true') {
+      setFavoritesCollapsed(true);
     }
-    return false;
-  });
-  const [othersCollapsed, setOthersCollapsed] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('sidebar-others-collapsed') === 'true';
+
+    const storedOthers = localStorage.getItem('sidebar-others-collapsed');
+    if (storedOthers === 'true') {
+      setOthersCollapsed(true);
     }
-    return false;
-  });
-  const [collapsedDateGroups, setCollapsedDateGroups] = useState<Record<string, boolean>>(() => {
-    if (typeof window !== 'undefined') {
+
+    const storedDateGroups = localStorage.getItem('sidebar-collapsed-date-groups');
+    if (storedDateGroups) {
       try {
-        return JSON.parse(localStorage.getItem('sidebar-collapsed-date-groups') || '{}');
-      } catch { return {}; }
+        setCollapsedDateGroups(JSON.parse(storedDateGroups));
+      } catch {
+        // Ignore parse errors
+      }
     }
-    return {};
-  });
+  }, []);
 
   // Resizable sidebar hook - handles width and collapsed state
   const {
@@ -733,17 +738,9 @@ const ThreadSidebar = forwardRef<ThreadSidebarRef, ThreadSidebarProps>(function 
                 className="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-0"
               >
                 <Settings size={16} className="text-gray-500" />
-                <span>Manage</span>
+                <span>Superuser Dashboard</span>
               </Link>
             )}
-            {/* Settings - available to all users */}
-            <Link
-              href="/profile"
-              className="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-b border-gray-100"
-            >
-              <Settings size={16} className="text-gray-500" />
-              <span>Settings</span>
-            </Link>
             {/* Memory */}
             <Link
               href="/profile"

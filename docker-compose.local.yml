@@ -39,7 +39,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 1G
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:6333/readyz || exit 1"]
       interval: 30s
@@ -103,8 +103,8 @@ services:
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-5m}
       - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-2}
       - OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH:-8192}
-      # Pull additional models on startup (includes embedding model for RAG)
-      - OLLAMA_PULL_MODELS=${OLLAMA_PULL_MODELS:-qwen3:1.7b,qwen3.5:0.8b,qwen3-embedding:0.6b,bbjson/bge-reranker-base}
+      # Pull additional models on startup (LLMs only - embeddings/reranking use local models)
+      - OLLAMA_PULL_MODELS=${OLLAMA_PULL_MODELS:-qwen3:1.7b,qwen3.5:0.8b}
     deploy:
       resources:
         limits:

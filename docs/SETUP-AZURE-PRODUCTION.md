@@ -261,11 +261,10 @@ OLLAMA_MODE=docker
 OLLAMA_API_BASE=http://ollama:11434
 DEFAULT_OLLAMA_MODEL=qwen3:1.7b
 OLLAMA_MODEL=qwen3:1.7b
-OLLAMA_PULL_MODELS=qwen3:1.7b,qwen3.5:0.8b,qwen3-embedding:0.6b,bbjson/bge-reranker-base
-OLLAMA_RERANKER_MODEL=bbjson/bge-reranker-base
+OLLAMA_PULL_MODELS=qwen3:1.7b,qwen3.5:0.8b
 
-# Local embeddings for RAG
-EMBEDDING_MODEL=ollama-qwen3-embedding:0.6b
+# Local embeddings for RAG (in-process, no Ollama needed)
+EMBEDDING_MODEL=bge-m3
 EMBEDDING_DIMENSIONS=1024
 
 # =============================================================================

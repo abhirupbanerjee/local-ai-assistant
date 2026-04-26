@@ -41,9 +41,9 @@ const DEFAULT_SETTINGS: Record<string, object> = {
     promptOptimizationMaxTokens: 2000,
   },
   'embedding-settings': {
-    model: 'ollama-qwen3-embedding:0.6b',
+    model: 'bge-m3',
     dimensions: 1024,
-    fallbackModel: 'ollama-qwen3-embedding:0.6b',
+    fallbackModel: 'bge-m3',
   },
   'reranker-settings': {
     enabled: true,

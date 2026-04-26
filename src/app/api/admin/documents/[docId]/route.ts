@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
-import { getGlobalDocument, deleteDocument, reindexDocument, updateDocumentCategories, toggleDocumentGlobal } from '@/lib/ingest';
+import { getGlobalDocument, deleteDocument, startReindexDocument, updateDocumentCategories, toggleDocumentGlobal } from '@/lib/ingest';
 import { getDocumentWithCategories } from '@/lib/db/compat';
 import type { GlobalDocument, AdminDeleteResponse, AdminUploadResponse, ApiError } from '@/types';
 
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const doc = await reindexDocument(docId);
+    const doc = await startReindexDocument(docId);
 
     if (!doc) {
       return NextResponse.json<ApiError>(
@@ -132,10 +132,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         id: doc.id,
         filename: doc.filename,
         size: doc.size,
-        status: 'processing',
-        message: 'Document is being reindexed',
+        status: 'processing' as const, // Always 'processing' when starting
+        message: 'Document reindex started in background. Poll for status updates.',
       },
-      { status: 202 }
+      { status: 202 } // 202 Accepted - request received, processing continues
     );
   } catch (error) {
     console.error('Reindex document error:', error);

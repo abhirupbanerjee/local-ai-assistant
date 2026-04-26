@@ -474,6 +474,7 @@ export async function deleteDocument(docId: string): Promise<{ filename: string;
 
 /**
  * Reindex a document (re-extract and re-embed)
+ * @deprecated Use startReindexDocument for async operation
  */
 export async function reindexDocument(docId: string): Promise<GlobalDocument | null> {
   const numericId = parseInt(docId, 10);
@@ -559,6 +560,127 @@ export async function reindexDocument(docId: string): Promise<GlobalDocument | n
     });
 
     throw error;
+  }
+}
+
+/**
+ * Start async reindex of a document.
+ * Returns immediately with 'processing' status, runs reindex in background.
+ * This avoids HTTP connection staleness issues with long-running embedding generation.
+ */
+export async function startReindexDocument(docId: string): Promise<GlobalDocument | null> {
+  const numericId = parseInt(docId, 10);
+  const doc = await getDocumentWithCategories(numericId);
+
+  if (!doc) {
+    return null;
+  }
+
+  // Update status to processing immediately
+  await updateDocument(numericId, { status: 'processing', errorMessage: null });
+
+  // Run reindex in background (no await - fire and forget)
+  reindexDocumentAsync(docId, numericId, doc.filename, doc.filepath, doc.isGlobal, doc.categories.map(c => c.slug))
+    .catch(err => console.error(`[Ingest] Background reindex failed for ${doc.filename}:`, err));
+
+  // Return document with 'processing' status immediately
+  const updatedDoc = await getDocumentWithCategories(numericId);
+  return toGlobalDocument(updatedDoc!);
+}
+
+/**
+ * Background reindex processing.
+ * Each Qdrant operation is a fresh HTTP request, avoiding connection staleness.
+ */
+async function reindexDocumentAsync(
+  docId: string,
+  numericId: number,
+  filename: string,
+  filepath: string,
+  isGlobal: boolean,
+  categorySlugs: string[]
+): Promise<void> {
+  const globalDocsDir = getGlobalDocsDir();
+  const filePath = path.join(globalDocsDir, filepath);
+
+  try {
+    // Check file exists
+    if (!await fileExists(filePath)) {
+      throw new Error('Document file not found');
+    }
+
+    // Get vector store and collection names (fresh connection)
+    const store = await getVectorStore();
+    const collNames = getCollectionNames();
+
+    // Delete existing embeddings (fresh connection)
+    if (isGlobal) {
+      await store.deleteDocumentsFromAllCollections([docId]);
+    } else if (categorySlugs.length > 0) {
+      for (const slug of categorySlugs) {
+        await store.deleteDocumentsByFilter(collNames.forCategory(slug), { documentId: docId });
+      }
+    } else {
+      await store.deleteDocumentsByFilter(collNames.legacy, { documentId: docId });
+    }
+
+    // Re-extract and chunk
+    const buffer = await readFileBuffer(filePath);
+    const mimeType = getMimeTypeFromFilename(filename);
+    const { text, pages } = await extractText(buffer, mimeType, filename);
+    const chunks = await chunkText(text, docId, filename, 'global', undefined, undefined, pages);
+
+    if (chunks.length === 0) {
+      throw new Error('No text content extracted from document');
+    }
+
+    console.log(`[Ingest] Reindexing ${filename}: ${chunks.length} chunks`);
+
+    // Create embeddings in batches
+    const batchSize = 100;
+    for (let i = 0; i < chunks.length; i += batchSize) {
+      const batch = chunks.slice(i, i + batchSize);
+      const texts = batch.map(c => c.text);
+      const embeddings = await createEmbeddings(texts);
+      const metadatas = batch.map(c => c.metadata);
+      const ids = batch.map(c => c.id);
+
+      // Get fresh vector store for each batch (avoids connection staleness)
+      const batchStore = await getVectorStore();
+      const batchCollNames = getCollectionNames();
+
+      if (isGlobal) {
+        await batchStore.addDocuments(batchCollNames.global, ids, embeddings, texts, metadatas);
+        // Also add to all existing category collections
+        const allCollections = await batchStore.listCollections();
+        for (const name of allCollections.filter(batchCollNames.isCategory)) {
+          await batchStore.addDocuments(name, ids, embeddings, texts, metadatas);
+        }
+      } else if (categorySlugs.length > 0) {
+        for (const slug of categorySlugs) {
+          await batchStore.addDocuments(batchCollNames.forCategory(slug), ids, embeddings, texts, metadatas);
+        }
+      } else {
+        await batchStore.addDocuments(batchCollNames.legacy, ids, embeddings, texts, metadatas);
+      }
+
+      console.log(`[Ingest] Reindex progress: ${Math.min(i + batchSize, chunks.length)}/${chunks.length} chunks`);
+    }
+
+    // Update document status to ready
+    await updateDocument(numericId, {
+      chunkCount: chunks.length,
+      status: 'ready',
+      errorMessage: null,
+    });
+
+    console.log(`[Ingest] Reindex complete: ${filename} (${chunks.length} chunks)`);
+  } catch (error) {
+    console.error(`[Ingest] Reindex failed for ${filename}:`, error);
+    await updateDocument(numericId, {
+      status: 'error',
+      errorMessage: error instanceof Error ? error.message : 'Unknown error',
+    });
   }
 }
 

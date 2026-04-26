@@ -86,6 +86,42 @@ function getClient(): QdrantClient {
 }
 
 /**
+ * Reset the Qdrant client singleton.
+ * Use this to force a fresh HTTP connection when the previous connection becomes stale.
+ * This is necessary because the @qdrant/js-client-rest uses connection pooling,
+ * and long-running operations (like embedding generation) can cause the connection
+ * to be closed by Qdrant while the client still tries to reuse it.
+ */
+export function resetQdrantClient(): void {
+  client = null;
+}
+
+/**
+ * Execute a Qdrant operation with automatic retry on socket errors.
+ * If the operation fails with UND_ERR_SOCKET, it resets the client and retries once.
+ */
+async function withRetry<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    // Check for socket error (UND_ERR_SOCKET)
+    const isSocketError = error instanceof Error &&
+      (error.message.includes('fetch failed') ||
+        error.message.includes('UND_ERR_SOCKET') ||
+        error.message.includes('other side closed'));
+
+    if (isSocketError) {
+      console.log('[Qdrant] Socket error detected, resetting client and retrying...');
+      resetQdrantClient();
+      // Retry once with fresh client
+      return await operation();
+    }
+
+    throw error;
+  }
+}
+
+/**
  * Convert a string ID to UUID format (Qdrant requires UUIDs)
  */
 function stringToUuid(str: string): string {
@@ -143,8 +179,6 @@ export class QdrantVectorStore implements VectorStoreClient {
   // ============ Collection Operations ============
 
   async createCollection(name: string): Promise<void> {
-    const qdrant = getClient();
-
     // Check if collection already exists
     if (await this.collectionExists(name)) {
       return;
@@ -153,32 +187,35 @@ export class QdrantVectorStore implements VectorStoreClient {
     // Get dynamic vector size from embedding settings
     const vectorSize = await getVectorSize();
 
-    await qdrant.createCollection(name, {
-      vectors: {
-        size: vectorSize,
-        distance: 'Cosine',
-      },
-      optimizers_config: {
-        default_segment_number: 2,
-        indexing_threshold: 1000,
-      },
-      quantization_config: {
-        scalar: {
-          type: 'int8',
-          quantile: 0.99,
-          always_ram: true,
+    await withRetry(async () => {
+      const qdrant = getClient();
+      await qdrant.createCollection(name, {
+        vectors: {
+          size: vectorSize,
+          distance: 'Cosine',
         },
-      },
-    });
+        optimizers_config: {
+          default_segment_number: 2,
+          indexing_threshold: 1000,
+        },
+        quantization_config: {
+          scalar: {
+            type: 'int8',
+            quantile: 0.99,
+            always_ram: true,
+          },
+        },
+      });
 
-    // Create payload indexes for common filter fields
-    await qdrant.createPayloadIndex(name, {
-      field_name: 'documentId',
-      field_schema: 'keyword',
-    });
-    await qdrant.createPayloadIndex(name, {
-      field_name: 'documentName',
-      field_schema: 'keyword',
+      // Create payload indexes for common filter fields
+      await qdrant.createPayloadIndex(name, {
+        field_name: 'documentId',
+        field_schema: 'keyword',
+      });
+      await qdrant.createPayloadIndex(name, {
+        field_name: 'documentName',
+        field_schema: 'keyword',
+      });
     });
 
     console.log(`[Qdrant] Created collection: ${name} (${vectorSize} dimensions)`);
@@ -194,8 +231,10 @@ export class QdrantVectorStore implements VectorStoreClient {
   }
 
   async listCollections(): Promise<string[]> {
-    const response = await getClient().getCollections();
-    return response.collections.map(c => c.name);
+    return withRetry(async () => {
+      const response = await getClient().getCollections();
+      return response.collections.map(c => c.name);
+    });
   }
 
   async collectionExists(name: string): Promise<boolean> {
@@ -233,8 +272,6 @@ export class QdrantVectorStore implements VectorStoreClient {
     // Ensure collection exists
     await this.createCollection(collectionName);
 
-    const qdrant = getClient();
-
     // Convert to Qdrant point format
     const points = ids.map((id, i) => ({
       id: stringToUuid(id),
@@ -246,13 +283,16 @@ export class QdrantVectorStore implements VectorStoreClient {
       },
     }));
 
-    // Batch upsert (100 points at a time)
+    // Batch upsert (100 points at a time) with retry on socket errors
     const batchSize = 100;
     for (let i = 0; i < points.length; i += batchSize) {
       const batch = points.slice(i, i + batchSize);
-      await qdrant.upsert(collectionName, {
-        wait: true,
-        points: batch,
+      await withRetry(async () => {
+        const qdrant = getClient();
+        await qdrant.upsert(collectionName, {
+          wait: true,
+          points: batch,
+        });
       });
     }
 

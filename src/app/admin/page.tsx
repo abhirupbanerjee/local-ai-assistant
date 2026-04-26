@@ -31,6 +31,7 @@ import BrandingSettingsTab from '@/components/admin/BrandingSettings';
 import TokenLimitsSettingsTab from '@/components/admin/tokens/TokenLimitsSettings';
 import TokenUsageDashboard from '@/components/admin/TokenUsageDashboard';
 import OllamaModelsTab from '@/components/admin/OllamaModelsTab';
+import RerankerSettingsTab from '@/components/admin/settings/RerankerSettings';
 
 interface AllowedUser {
   id?: number;
@@ -111,7 +112,7 @@ type DocumentsSection = 'documents' | 'acronyms';
 type UsersSection = 'management' | 'superuser' | 'credentials-auth';
 type PromptsSection = 'system-prompt' | 'category-prompts';
 type TokensSection = 'memory' | 'summarization' | 'limits';
-type SettingsSection = 'api-keys' | 'cache' | 'backup' | 'routes' | 'llm' | 'rag' | 'embedding' | 'documents';
+type SettingsSection = 'api-keys' | 'cache' | 'backup' | 'routes' | 'llm' | 'rag' | 'embedding' | 'documents' | 'reranker';
 
 // Legacy types for backward compatibility during migration
 type ToolsSection = 'management' | 'dependencies' | 'routing' | 'conflicts';
@@ -247,7 +248,7 @@ interface SystemStats {
   };
 }
 
-const VALID_SETTINGS_SECTIONS: SettingsSection[] = ['api-keys', 'cache', 'backup', 'routes', 'llm', 'rag', 'embedding', 'documents'];
+const VALID_SETTINGS_SECTIONS: SettingsSection[] = ['api-keys', 'cache', 'backup', 'routes', 'llm', 'rag', 'embedding', 'documents', 'reranker'];
 
 function AdminPageContent() {
   const router = useRouter();
@@ -1129,6 +1130,9 @@ function AdminPageContent() {
 
               {/* Document Processing Section */}
               {settingsSection === 'documents' && <DocumentProcessingSettingsTab />}
+
+              {/* Reranker Section */}
+              {settingsSection === 'reranker' && <RerankerSettingsTab />}
 
               {/* Branding, Backup moved to other tabs */}
           </>

@@ -127,10 +127,10 @@ export interface RerankerSettings {
 export const DEFAULT_RERANKER_SETTINGS: RerankerSettings = {
   enabled: true,
   providers: [
-    { provider: 'ollama', enabled: true },
-    { provider: 'bge-large', enabled: true },
     { provider: 'bge-base', enabled: true },
+    { provider: 'bge-large', enabled: true },
     { provider: 'local', enabled: true },
+    { provider: 'ollama', enabled: false },
     { provider: 'cohere', enabled: false },
     { provider: 'fireworks', enabled: false },
   ],
@@ -713,7 +713,7 @@ export function getBrandingSettings(): BrandingSettings {
 }
 
 /** Default fallback embedding model for local-first deployments */
-export const DEFAULT_FALLBACK_EMBEDDING_MODEL = 'ollama-qwen3-embedding:0.6b';
+export const DEFAULT_FALLBACK_EMBEDDING_MODEL = 'bge-m3';
 
 /**
  * Get embedding settings

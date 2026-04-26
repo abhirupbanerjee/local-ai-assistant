@@ -27,27 +27,28 @@ export function useResizableSidebar({
   collapseThreshold = 120,
   side,
 }: UseResizableSidebarOptions): UseResizableSidebarReturn {
-  // Initialize width from localStorage or default
-  const [width, setWidth] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem(`${storageKeyPrefix}-width`);
-      if (stored) {
-        const parsed = parseInt(stored, 10);
-        if (!isNaN(parsed) && parsed >= minWidth && parsed <= maxWidth) {
-          return parsed;
-        }
+  // Use default values for SSR to avoid hydration mismatch
+  const [width, setWidth] = useState(defaultWidth);
+  const [isCollapsed, setIsCollapsedState] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Initialize from localStorage after mount (client-side only)
+  useEffect(() => {
+    const storedWidth = localStorage.getItem(`${storageKeyPrefix}-width`);
+    if (storedWidth) {
+      const parsed = parseInt(storedWidth, 10);
+      if (!isNaN(parsed) && parsed >= minWidth && parsed <= maxWidth) {
+        setWidth(parsed);
       }
     }
-    return defaultWidth;
-  });
 
-  // Initialize collapsed state from localStorage
-  const [isCollapsed, setIsCollapsedState] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem(`${storageKeyPrefix}-collapsed`) === 'true';
+    const storedCollapsed = localStorage.getItem(`${storageKeyPrefix}-collapsed`);
+    if (storedCollapsed === 'true') {
+      setIsCollapsedState(true);
     }
-    return false;
-  });
+
+    setIsInitialized(true);
+  }, [storageKeyPrefix, minWidth, maxWidth]);
 
   const [isResizing, setIsResizing] = useState(false);
   const startXRef = useRef(0);
