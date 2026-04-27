@@ -29,7 +29,7 @@ import {
 // Type Definitions
 // ============================================================================
 
-type TabType = 'branding' | 'dashboard' | 'categories' | 'documents' | 'users' | 'prompts' | 'tools' | 'skills' | 'tokens' | 'usage' | 'settings' | 'ollama';
+type TabType = 'branding' | 'dashboard' | 'categories' | 'documents' | 'users' | 'prompts' | 'tools' | 'skills' | 'tokens' | 'usage' | 'settings';
 
 // Section types for expandable menus
 type DocumentsSection = 'documents' | 'acronyms';
@@ -37,7 +37,7 @@ type UsersSection = 'management' | 'superuser' | 'credentials-auth';
 type PromptsSection = 'system-prompt' | 'category-prompts';
 type AgentsSection = 'config' | 'bots';
 type TokensSection = 'memory' | 'summarization' | 'limits';
-type SettingsSection = 'api-keys' | 'cache' | 'backup' | 'routes' | 'llm' | 'rag' | 'embedding' | 'documents' | 'reranker';
+type SettingsSection = 'api-keys' | 'cache' | 'backup' | 'routes' | 'llm' | 'rag' | 'embedding' | 'documents' | 'reranker' | 'ollama' | 'fireworks';
 
 // Generic submenu item type
 interface SubmenuItem {
@@ -69,7 +69,6 @@ const MENU_CONFIG: MenuConfigItem[] = [
   { id: 'skills', label: 'Skills', icon: Sparkles, expandable: false },
   { id: 'tokens', label: 'Tokens', icon: Coins, expandable: false },
   { id: 'usage', label: 'Usage', icon: BarChart3, expandable: false },
-  { id: 'ollama', label: 'Ollama', icon: Bot, expandable: false },
   {
     id: 'settings',
     label: 'Settings',
@@ -82,6 +81,8 @@ const MENU_CONFIG: MenuConfigItem[] = [
       { id: 'embedding', label: 'Embedding' },
       { id: 'reranker', label: 'Reranker' },
       { id: 'documents', label: 'Documents' },
+      { id: 'ollama', label: 'Ollama' },
+      { id: 'fireworks', label: 'Fireworks' },
       { id: 'api-keys', label: 'API Keys' },
       { id: 'cache', label: 'Cache' },
       { id: 'backup', label: 'Backup' },

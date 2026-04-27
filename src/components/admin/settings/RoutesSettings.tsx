@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Route, AlertCircle, CheckCircle, Info } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Route, AlertCircle, CheckCircle, Info, ExternalLink } from 'lucide-react';
 import Button from '@/components/ui/Button';
 
 interface RoutesSettings {
@@ -12,6 +13,7 @@ interface RoutesSettings {
 }
 
 export default function RoutesSettings() {
+  const router = useRouter();
   const [settings, setSettings] = useState<RoutesSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -92,8 +94,8 @@ export default function RoutesSettings() {
           <p className="font-medium mb-1">Route Configuration</p>
           <ul className="list-disc list-inside space-y-1">
             <li><strong>Route 1 (OpenAI):</strong> Direct OpenAI API calls</li>
-            <li><strong>Route 2 (LiteLLM Proxy):</strong> Multi-provider proxy for cloud models</li>
-            <li><strong>Route 3 (Ollama):</strong> Local Ollama models</li>
+            <li><strong>Route 2 (Fireworks):</strong> Fireworks AI models (Zero Data Retention, SOC2/GDPR/HIPAA)</li>
+            <li><strong>Route 3 (Ollama):</strong> Local Ollama or Ollama Cloud models</li>
           </ul>
         </div>
       </div>
@@ -137,7 +139,7 @@ export default function RoutesSettings() {
           </div>
         </div>
 
-        {/* Route 2 - LiteLLM Proxy */}
+        {/* Route 2 - Fireworks */}
         <div className="bg-white border rounded-lg p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -145,19 +147,27 @@ export default function RoutesSettings() {
                 <Route size={20} className="text-gray-600" />
               </div>
               <div>
-                <h3 className="font-medium text-gray-900">Route 2: LiteLLM Proxy</h3>
-                <p className="text-sm text-gray-500">Multi-provider proxy for cloud models</p>
+                <h3 className="font-medium text-gray-900">Route 2: Fireworks AI</h3>
+                <p className="text-sm text-gray-500">Direct Fireworks API (Zero Data Retention, SOC2/GDPR/HIPAA)</p>
               </div>
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={settings.route2Enabled}
-                onChange={(e) => setSettings({ ...settings, route2Enabled: e.target.checked })}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            </label>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => router.push('/admin?tab=settings&section=fireworks')}
+                className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
+              >
+                Manage Models <ExternalLink size={14} />
+              </button>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.route2Enabled}
+                  onChange={(e) => setSettings({ ...settings, route2Enabled: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
           </div>
         </div>
 
@@ -169,19 +179,27 @@ export default function RoutesSettings() {
                 <Route size={20} className="text-gray-600" />
               </div>
               <div>
-                <h3 className="font-medium text-gray-900">Route 3: Ollama (Local)</h3>
-                <p className="text-sm text-gray-500">Local Ollama models for air-gapped deployment</p>
+                <h3 className="font-medium text-gray-900">Route 3: Ollama (Local/Cloud)</h3>
+                <p className="text-sm text-gray-500">Local Ollama or Ollama Cloud models</p>
               </div>
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={settings.route3Enabled}
-                onChange={(e) => setSettings({ ...settings, route3Enabled: e.target.checked })}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            </label>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => router.push('/admin?tab=settings&section=ollama')}
+                className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
+              >
+                Manage Models <ExternalLink size={14} />
+              </button>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.route3Enabled}
+                  onChange={(e) => setSettings({ ...settings, route3Enabled: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
           </div>
         </div>
 
@@ -217,7 +235,7 @@ export default function RoutesSettings() {
                 className="w-4 h-4 text-blue-600"
               />
               <span className={!settings.route2Enabled ? 'text-gray-400' : 'text-gray-700'}>
-                Route 2 (LiteLLM Proxy)
+                Route 2 (Fireworks)
               </span>
             </label>
 
@@ -232,7 +250,7 @@ export default function RoutesSettings() {
                 className="w-4 h-4 text-blue-600"
               />
               <span className={!settings.route3Enabled ? 'text-gray-400' : 'text-gray-700'}>
-                Route 3 (Ollama Local)
+                Route 3 (Ollama)
               </span>
             </label>
           </div>

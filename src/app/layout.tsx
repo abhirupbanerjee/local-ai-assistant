@@ -10,6 +10,12 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: 'Local AI Assistant Platform',
   description: 'AI-powered assistant platform for government and enterprise',
+  icons: {
+    icon: [
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+    ],
+  },
 };
 
 export default function RootLayout({

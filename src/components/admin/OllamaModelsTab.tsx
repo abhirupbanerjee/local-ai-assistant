@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Bot, Download, Trash2, RefreshCw, CheckCircle, XCircle, AlertCircle, Loader2, Sparkles } from 'lucide-react';
+import { Bot, Download, Trash2, RefreshCw, CheckCircle, XCircle, AlertCircle, Loader2, Sparkles, Power, Eye, Wrench } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
 
@@ -10,6 +10,7 @@ interface OllamaModel {
   model: string;
   size: number;
   digest: string;
+  modifiedAt?: string;
   details?: {
     format: string;
     family: string;
@@ -17,6 +18,7 @@ interface OllamaModel {
     parameter_size: string;
     quantization_level: string;
   };
+  isEnabled: boolean;
 }
 
 interface OllamaStatus {
@@ -49,6 +51,9 @@ export default function OllamaModelsTab() {
   const [syncing, setSyncing] = useState(false);
   const [routesSettings, setRoutesSettings] = useState<{ route3Enabled: boolean } | null>(null);
   const [enablingRoute3, setEnablingRoute3] = useState(false);
+  const [deletingModel, setDeletingModel] = useState<string | null>(null);
+  const [togglingModel, setTogglingModel] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   
   // Use refs to track polling
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -123,6 +128,69 @@ export default function OllamaModelsTab() {
     }
   };
 
+  // Toggle model enabled/disabled status
+  const handleToggleModel = async (modelName: string, currentEnabled: boolean) => {
+    setTogglingModel(modelName);
+    setPullError(null);
+    setPullSuccess(null);
+    
+    try {
+      const response = await fetch('/api/ollama/models', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: modelName, enabled: !currentEnabled }),
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        // Update local state
+        setModels(prev => prev.map(m => 
+          m.name === modelName ? { ...m, isEnabled: !currentEnabled } : m
+        ));
+        setPullSuccess(`Model ${modelName} ${!currentEnabled ? 'enabled' : 'disabled'}`);
+        await checkSyncStatus();
+      } else {
+        setPullError(data.error || 'Failed to update model');
+      }
+    } catch (err) {
+      setPullError('Failed to update model status');
+    } finally {
+      setTogglingModel(null);
+    }
+  };
+
+  // Delete model from Ollama
+  const handleDeleteModel = async (modelName: string) => {
+    setDeletingModel(modelName);
+    setPullError(null);
+    setPullSuccess(null);
+    setShowDeleteConfirm(null);
+    
+    try {
+      const response = await fetch('/api/ollama/models', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: modelName }),
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        // Remove from local state
+        setModels(prev => prev.filter(m => m.name !== modelName));
+        setPullSuccess(`Model ${modelName} deleted from Ollama`);
+        await checkSyncStatus();
+      } else {
+        setPullError(data.error || 'Failed to delete model');
+      }
+    } catch (err) {
+      setPullError('Failed to delete model');
+    } finally {
+      setDeletingModel(null);
+    }
+  };
+
   // Poll for active pull jobs
   const pollPullStatus = useCallback(async () => {
     try {
@@ -174,7 +242,8 @@ export default function OllamaModelsTab() {
       
       if (response.ok) {
         setPullSuccess(`Synced ${data.synced?.length || 0} models to chat. ${data.enabled?.length || 0} re-enabled.`);
-        // Refresh sync status
+        // Refresh models and sync status
+        await loadModels();
         await checkSyncStatus();
       } else {
         setPullError(data.error || 'Failed to sync models');
@@ -261,7 +330,7 @@ export default function OllamaModelsTab() {
           </div>
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Ollama Models</h2>
-            <p className="text-sm text-gray-500">Manage local LLM models</p>
+            <p className="text-sm text-gray-500">Manage local LLM models - pull, enable/disable, and delete</p>
           </div>
         </div>
         
@@ -466,7 +535,19 @@ export default function OllamaModelsTab() {
                 <div className="flex items-center gap-3">
                   <Bot className="w-5 h-5 text-gray-400" />
                   <div>
-                    <p className="font-medium text-gray-900">{model.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-gray-900">{model.name}</p>
+                      {/* Status Badge */}
+                      {model.isEnabled ? (
+                        <span className="px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded-full">
+                          Enabled
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 text-xs font-medium bg-gray-200 text-gray-600 rounded-full">
+                          Disabled
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2 text-xs text-gray-500">
                       <span>{formatSize(model.size)}</span>
                       {model.details?.parameter_size && (
@@ -484,11 +565,80 @@ export default function OllamaModelsTab() {
                     </div>
                   </div>
                 </div>
+                
+                {/* Action Buttons */}
+                <div className="flex items-center gap-2">
+                  {/* Enable/Disable Toggle */}
+                  <button
+                    onClick={() => handleToggleModel(model.name, model.isEnabled)}
+                    disabled={togglingModel === model.name}
+                    className={`p-2 rounded-lg transition-colors ${
+                      model.isEnabled
+                        ? 'text-green-600 hover:bg-green-100'
+                        : 'text-gray-400 hover:bg-gray-200'
+                    }`}
+                    title={model.isEnabled ? 'Disable model' : 'Enable model'}
+                  >
+                    {togglingModel === model.name ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Power className="w-4 h-4" />
+                    )}
+                  </button>
+                  
+                  {/* Delete Button */}
+                  <button
+                    onClick={() => setShowDeleteConfirm(model.name)}
+                    disabled={deletingModel === model.name}
+                    className="p-2 text-red-500 hover:bg-red-100 rounded-lg transition-colors"
+                    title="Delete model"
+                  >
+                    {deletingModel === model.name ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-red-100 rounded-lg">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Delete Model</h3>
+                <p className="text-sm text-gray-500">This action cannot be undone</p>
+              </div>
+            </div>
+            <p className="text-gray-700 mb-6">
+              Are you sure you want to delete <strong>{showDeleteConfirm}</strong> from Ollama? This will remove the model files from disk.
+            </p>
+            <div className="flex justify-end gap-3">
+              <Button
+                onClick={() => setShowDeleteConfirm(null)}
+                variant="secondary"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => handleDeleteModel(showDeleteConfirm)}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Delete Model
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

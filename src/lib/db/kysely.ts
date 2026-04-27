@@ -112,12 +112,7 @@ async function runPostgresMigrations(database: Kysely<DB>): Promise<void> {
     console.log('[Kysely] Seeding default LLM providers...');
     const { DEFAULT_PROVIDERS } = await import('./llm-providers');
     const providerEnvKeys: Record<string, { apiKey?: string; apiBase?: string }> = {
-      openai: { apiKey: 'OPENAI_API_KEY' },
-      gemini: { apiKey: 'GEMINI_API_KEY' },
-      mistral: { apiKey: 'MISTRAL_API_KEY' },
       ollama: { apiBase: 'OLLAMA_API_BASE' },
-      anthropic: { apiKey: 'ANTHROPIC_API_KEY' },
-      deepseek: { apiKey: 'DEEPSEEK_API_KEY' },
       fireworks: { apiKey: 'FIREWORKS_AI_API_KEY' },
     };
 
@@ -198,24 +193,91 @@ async function runPostgresMigrations(database: Kysely<DB>): Promise<void> {
   await sql`ALTER TABLE messages ADD COLUMN IF NOT EXISTS generated_diagrams_json TEXT`.execute(database);
   console.log('[Kysely] Ensured messages.generated_diagrams_json column exists');
 
-  // Migration: Rename Ollama model IDs to match actual Ollama API model names
-  // Old IDs used a display-friendly prefix (ollama-*); new IDs are the actual model names
-  // LiteLLM model_name entries in litellm_config.yaml updated to match
-  const ollamaRenames: Array<{ oldId: string; newId: string }> = [
-    { oldId: 'ollama-llama3.2',   newId: 'llama3.2:3b' },
-    { oldId: 'ollama-qwen3',      newId: 'qwen3:4b' },
-    { oldId: 'ollama-qwen3-1.7b', newId: 'qwen3:1.7b' },
-    { oldId: 'ollama-gpt-oss',    newId: 'gpt-oss:20b' },
-    { oldId: 'ollama-mxbai-embed', newId: 'mxbai-embed-large' },
+  // Migration: Seed curated Ollama local models
+  const ollamaModels = [
+    {
+      id: 'gpt-oss:20b',
+      display_name: 'GPT-OSS 20B (Ollama)',
+      tool_capable: 1,
+      vision_capable: 0,
+      max_input_tokens: 131072,
+      max_output_tokens: 2000,
+    },
+    {
+      id: 'qwen3.5:0.8b',
+      display_name: 'Qwen3.5 0.8B (Ollama)',
+      tool_capable: 1,
+      vision_capable: 1,
+      max_input_tokens: 131072,
+      max_output_tokens: 2000,
+    },
+    {
+      id: 'qwen3.5:2b',
+      display_name: 'Qwen3.5 2B (Ollama)',
+      tool_capable: 1,
+      vision_capable: 1,
+      max_input_tokens: 131072,
+      max_output_tokens: 2000,
+    },
+    {
+      id: 'ministral-3:3b',
+      display_name: 'Ministral 3B (Ollama)',
+      tool_capable: 1,
+      vision_capable: 0,
+      max_input_tokens: 131072,
+      max_output_tokens: 2000,
+    },
+    {
+      id: 'llama3.2:3b',
+      display_name: 'Llama3.2 3B (Ollama)',
+      tool_capable: 1,
+      vision_capable: 0,
+      max_input_tokens: 131072,
+      max_output_tokens: 2000,
+    },
   ];
-  for (const { oldId, newId } of ollamaRenames) {
-    await sql`UPDATE enabled_models SET id = ${newId} WHERE id = ${oldId}`.execute(database);
-    await sql`UPDATE threads SET selected_model = ${newId} WHERE selected_model = ${oldId}`.execute(database);
+  for (const model of ollamaModels) {
+    await database
+      .insertInto('enabled_models')
+      .values({
+        id: model.id,
+        provider_id: 'ollama',
+        display_name: model.display_name,
+        tool_capable: model.tool_capable,
+        vision_capable: model.vision_capable,
+        max_input_tokens: model.max_input_tokens,
+        max_output_tokens: model.max_output_tokens,
+        is_default: 0,
+        enabled: 0,
+        sort_order: 9800,
+      })
+      .onConflict(oc => oc.column('id').doNothing())
+      .execute();
   }
-  console.log('[Kysely] Renamed Ollama model IDs to actual model names');
+  console.log('[Kysely] Seeded Ollama local models');
+
+  // Migration: Remove old/retired Ollama models
+  await sql`DELETE FROM enabled_models WHERE id IN ('ollama-llama3.2', 'ollama-qwen3', 'ollama-qwen3-1.7b', 'ollama-gpt-oss', 'ollama-mxbai-embed', 'qwen3:4b', 'qwen3:1.7b', 'mxbai-embed-large', 'qwen3.5:0.6b')`.execute(database);
+  console.log('[Kysely] Removed retired Ollama models');
 
   // Migration: Seed new Fireworks models added to litellm_config.yaml
   const newFireworksModels = [
+    {
+      id: 'fireworks/kimi-k2p6',
+      display_name: 'Kimi K2.6 (Fireworks)',
+      tool_capable: 1,
+      vision_capable: 0,
+      max_input_tokens: 131072,
+      max_output_tokens: 16384,
+    },
+    {
+      id: 'fireworks/minimax-m2p7',
+      display_name: 'MiniMax M2.7 (Fireworks)',
+      tool_capable: 1,
+      vision_capable: 0,
+      max_input_tokens: 131072,
+      max_output_tokens: 16384,
+    },
     {
       id: 'fireworks/qwen3p6-plus',
       display_name: 'Qwen3 P6 Plus (Fireworks)',
@@ -225,16 +287,8 @@ async function runPostgresMigrations(database: Kysely<DB>): Promise<void> {
       max_output_tokens: 16384,
     },
     {
-      id: 'fireworks/qwen3-vl-30b-a3b-thinking',
-      display_name: 'Qwen3 VL 30B Thinking (Fireworks)',
-      tool_capable: 1,
-      vision_capable: 1,
-      max_input_tokens: 131072,
-      max_output_tokens: 16384,
-    },
-    {
-      id: 'fireworks/minimax-m2p7',
-      display_name: 'MiniMax M2.7 (Fireworks)',
+      id: 'fireworks/glm-5p1',
+      display_name: 'GLM 5.1 (Fireworks)',
       tool_capable: 1,
       vision_capable: 0,
       max_input_tokens: 131072,
@@ -262,8 +316,12 @@ async function runPostgresMigrations(database: Kysely<DB>): Promise<void> {
   console.log('[Kysely] Seeded new Fireworks models');
 
   // Migration: Remove retired Fireworks models
-  await sql`DELETE FROM enabled_models WHERE id IN ('fireworks/deepseek-v3p2', 'fireworks/qwen3-coder-480b-a35b-instruct')`.execute(database);
-  console.log('[Kysely] Removed retired Fireworks models (deepseek-v3p2, qwen3-coder-480b)');
+  await sql`DELETE FROM enabled_models WHERE id IN ('fireworks/deepseek-v3p2', 'fireworks/qwen3-coder-480b-a35b-instruct', 'fireworks/kimi-k2p5', 'fireworks/minimax-m2p5', 'fireworks/qwen3-vl-30b-a3b-thinking')`.execute(database);
+  console.log('[Kysely] Removed retired Fireworks models (deepseek-v3p2, qwen3-coder-480b, kimi-k2p5, minimax-m2p5, qwen3-vl-30b)');
+
+  // Migration: Remove all non-Ollama/Fireworks models (OpenAI, Gemini, Mistral, Anthropic, DeepSeek)
+  await sql`DELETE FROM enabled_models WHERE provider_id IN ('openai', 'gemini', 'mistral', 'anthropic', 'deepseek')`.execute(database);
+  console.log('[Kysely] Removed all non-Ollama/Fireworks models');
 
   // Migration: Remove gpt-4o-mini-transcribe (transcription model, not a chat LLM)
   await sql`DELETE FROM enabled_models WHERE id = 'gpt-4o-mini-transcribe'`.execute(database);

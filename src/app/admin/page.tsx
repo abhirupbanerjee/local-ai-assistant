@@ -32,6 +32,7 @@ import TokenLimitsSettingsTab from '@/components/admin/tokens/TokenLimitsSetting
 import TokenUsageDashboard from '@/components/admin/TokenUsageDashboard';
 import OllamaModelsTab from '@/components/admin/OllamaModelsTab';
 import OllamaCloudModelsTab from '@/components/admin/OllamaCloudModelsTab';
+import FireworksModelsTab from '@/components/admin/FireworksModelsTab';
 import RerankerSettingsTab from '@/components/admin/settings/RerankerSettings';
 
 interface AllowedUser {
@@ -108,12 +109,12 @@ interface AvailableModel {
 }
 
 // New menu structure types - matching AdminSidebarMenu
-type TabType = 'branding' | 'dashboard' | 'categories' | 'documents' | 'users' | 'prompts' | 'tools' | 'skills' | 'tokens' | 'usage' | 'settings' | 'ollama';
+type TabType = 'branding' | 'dashboard' | 'categories' | 'documents' | 'users' | 'prompts' | 'tools' | 'skills' | 'tokens' | 'usage' | 'settings';
 type DocumentsSection = 'documents' | 'acronyms';
 type UsersSection = 'management' | 'superuser' | 'credentials-auth';
 type PromptsSection = 'system-prompt' | 'category-prompts';
 type TokensSection = 'memory' | 'summarization' | 'limits';
-type SettingsSection = 'api-keys' | 'cache' | 'backup' | 'routes' | 'llm' | 'rag' | 'embedding' | 'documents' | 'reranker';
+type SettingsSection = 'api-keys' | 'cache' | 'backup' | 'routes' | 'llm' | 'rag' | 'embedding' | 'documents' | 'reranker' | 'ollama' | 'fireworks';
 
 // Legacy types for backward compatibility during migration
 type ToolsSection = 'management' | 'dependencies' | 'routing' | 'conflicts';
@@ -249,7 +250,7 @@ interface SystemStats {
   };
 }
 
-const VALID_SETTINGS_SECTIONS: SettingsSection[] = ['api-keys', 'cache', 'backup', 'routes', 'llm', 'rag', 'embedding', 'documents', 'reranker'];
+const VALID_SETTINGS_SECTIONS: SettingsSection[] = ['api-keys', 'cache', 'backup', 'routes', 'llm', 'rag', 'embedding', 'documents', 'reranker', 'ollama', 'fireworks'];
 
 function AdminPageContent() {
   const router = useRouter();
@@ -1135,6 +1136,17 @@ function AdminPageContent() {
               {/* Reranker Section */}
               {settingsSection === 'reranker' && <RerankerSettingsTab />}
 
+              {/* Ollama Section */}
+              {settingsSection === 'ollama' && (
+                <div className="space-y-6">
+                  <OllamaModelsTab />
+                  <OllamaCloudModelsTab />
+                </div>
+              )}
+
+              {/* Fireworks Section */}
+              {settingsSection === 'fireworks' && <FireworksModelsTab />}
+
               {/* Branding, Backup moved to other tabs */}
           </>
         )}
@@ -1285,14 +1297,6 @@ function AdminPageContent() {
         {/* Usage Tab - Token Usage Dashboard */}
         {activeTab === 'usage' && (
           <TokenUsageDashboard />
-        )}
-
-        {/* Ollama Tab - Model Management */}
-        {activeTab === 'ollama' && (
-          <div className="space-y-6">
-            <OllamaModelsTab />
-            <OllamaCloudModelsTab />
-          </div>
         )}
         </main>
       </div>

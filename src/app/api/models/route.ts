@@ -1,8 +1,7 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
-import { getActiveModels } from '@/lib/db/compat/enabled-models';
+import { getActiveModels, getAllEnabledModels, getModelsByProvider } from '@/lib/db/compat/enabled-models';
 import { getRoutesSettings } from '@/lib/db/compat/config';
-import { isRoute2Model, isRoute3Model } from '@/lib/llm-fallback';
 
 /**
  * Determine which route a model belongs to based on provider_id.
@@ -23,11 +22,23 @@ function getModelRoute(providerId: string): 'route1' | 'route2' | 'route3' {
   return 'route1';
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  // Check for provider filter query parameter
+  const { searchParams } = new URL(request.url);
+  const providerFilter = searchParams.get('provider');
+
+  // If provider filter is specified, return models for that provider only
+  if (providerFilter) {
+    const models = await getModelsByProvider(providerFilter);
+    return NextResponse.json({ models });
+  }
+
+  // Otherwise return active models filtered by route settings
   const models = await getActiveModels();
   const routesSettings = await getRoutesSettings();
 
